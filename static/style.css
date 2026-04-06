@@ -277,14 +277,34 @@ textarea { resize: vertical; }
   padding: 24px;
   font-size: 0.95rem;
   line-height: 1.9;
-  white-space: pre-wrap;
   min-height: 100px;
 }
-/* formatReading() が挿入する ◆ 見出し行を強調 */
-.reading-text br + br {
-  display: block;
-  content: "";
-  margin-top: 0.4em;
+/* ---- formatReading() が生成する要素 ---- */
+
+/* 通常テキスト行 */
+.reading-text .reading-line {
+  margin: 0;
+  line-height: 1.9;
+}
+
+/* 見出し行（## や 【】） */
+.reading-text .reading-heading {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.02rem;
+  color: var(--primary-light);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+/* 段落間の余白（空行1つ分） */
+.reading-text .reading-para-break {
+  height: 0.75em;
+}
+
+/* 見出し前の余白（少し大きめ） */
+.reading-text .reading-spacer {
+  height: 1.1em;
 }
 .reading-text .cursor {
   display: inline-block;

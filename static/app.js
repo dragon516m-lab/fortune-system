@@ -96,11 +96,11 @@ async function handleSubmit(e) {
 
         if (payload.chunk) {
           currentReadingText += payload.chunk;
-          readingText.innerHTML = escapeHtml(formatReading(currentReadingText)) + '<span class="cursor"></span>';
+          readingText.innerHTML = formatReading(currentReadingText) + '<span class="cursor"></span>';
         }
 
         if (payload.done) {
-          readingText.innerHTML = escapeHtml(formatReading(currentReadingText));
+          readingText.innerHTML = formatReading(currentReadingText);
           currentFileId = payload.file_id;
           currentFortuneData = payload.fortune_data;
 
@@ -241,7 +241,7 @@ async function loadReading(fileId) {
     resultSection.classList.remove("hidden");
     statsGrid.classList.remove("hidden");
     renderFortuneStats(data.fortune_data);
-    readingText.innerHTML = escapeHtml(formatReading(data.reading));
+    readingText.innerHTML = formatReading(data.reading);
     actionButtons.classList.remove("hidden");
 
     currentFileId = fileId;
@@ -256,52 +256,115 @@ async function loadReading(fileId) {
 // ===== ユーティリティ =====
 
 /**
- * Markdown 記号を除去してHTML化する。
- * - ## / ### / # → <strong> 見出し（前後に余白）
- * - **text** / __text__ → <strong>text</strong>
- * - *text* / _text_ → text（記号除去のみ）
- * - --- / *** の区切り線 → 空行
- * - 残った行頭の > → 除去
+ * プレーンテキスト → HTMLに変換。
+ * Markdown記号を除去しつつ、見出し・段落・太字を適切にHTML化する。
+ * innerHTMLに直接セットする前提。
  */
 function formatReading(raw) {
+  // ---- Step 1: 行に分割 ----
   const lines = raw.split("\n");
-  const out = [];
+  const htmlParts = [];
+  let blankCount = 0;
 
-  for (let line of lines) {
-    // 区切り線
-    if (/^\s*[-*]{3,}\s*$/.test(line)) {
-      out.push("");
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    // 区切り線 (--- / ***) → 空行として扱う
+    if (/^\s*[-*_]{3,}\s*$/.test(line)) {
+      blankCount++;
       continue;
     }
-    // 見出し ## / ### / #
-    const headingMatch = line.match(/^#{1,3}\s+(.+)$/);
-    if (headingMatch) {
-      out.push("");
-      out.push("◆ " + headingMatch[1].trim());
-      out.push("");
+
+    // 見出し: ## テキスト / 【テキスト】 / ◆ テキスト
+    const headingMd  = line.match(/^#{1,3}\s+(.+)$/);
+    const headingJp  = line.match(/^[【◆✦✨🔮🌙🔢🦁📜].*[】]?\s*$/);
+    const headingDot = line.match(/^[◆✦★☆]\s*(.+)$/);
+
+    if (headingMd || headingDot) {
+      const text = headingMd
+        ? headingMd[1].trim()
+        : headingDot[1].trim();
+      // 前に空白を入れる（最初の見出しは除く）
+      if (htmlParts.length > 0) {
+        htmlParts.push('<div class="reading-spacer"></div>');
+      }
+      htmlParts.push(
+        '<p class="reading-heading">' + esc(text) + '</p>'
+      );
+      blankCount = 0;
       continue;
     }
+
+    // 【見出し】形式（行全体が【】で始まる）
+    if (/^【.+】/.test(line)) {
+      if (htmlParts.length > 0) {
+        htmlParts.push('<div class="reading-spacer"></div>');
+      }
+      const inner = line.replace(/^【/, "").replace(/】.*$/, "");
+      htmlParts.push(
+        '<p class="reading-heading">' + esc(line.trim()) + '</p>'
+      );
+      blankCount = 0;
+      continue;
+    }
+
+    // 空行
+    if (line.trim() === "") {
+      blankCount++;
+      // 2行以上の空行は段落区切りとして1つだけ挿入
+      if (blankCount === 1 && htmlParts.length > 0) {
+        htmlParts.push('<div class="reading-para-break"></div>');
+      }
+      continue;
+    }
+
+    blankCount = 0;
+
     // 引用 >
     line = line.replace(/^>\s?/, "");
-    // インラインの **bold** / __bold__
-    line = line.replace(/\*\*(.+?)\*\*/g, "【$1】");
-    line = line.replace(/__(.+?)__/g, "【$1】");
-    // インラインの *italic* / _italic_（記号除去）
+
+    // インライン整形
+    // **太字** / __太字__ → <strong>
+    line = line.replace(/\*\*(.+?)\*\*/g, (_, t) => '<strong>' + esc(t) + '</strong>');
+    line = line.replace(/__(.+?)__/g,     (_, t) => '<strong>' + esc(t) + '</strong>');
+    // *斜体* / _斜体_ → 記号除去のみ
     line = line.replace(/\*(.+?)\*/g, "$1");
-    line = line.replace(/_(.+?)_/g, "$1");
-    out.push(line);
+    line = line.replace(/_([^_]+)_/g, "$1");
+    // `コード` → 記号除去
+    line = line.replace(/`(.+?)`/g, "$1");
+
+    // 通常行 — esc済みでない部分をエスケープしてから追加
+    // ※上記で強タグを挿入済みなので、残りをescapeしてはいけない
+    // → 代わりに生テキスト部分だけをescする処理を行う
+    htmlParts.push('<p class="reading-line">' + escLine(line) + '</p>');
   }
 
-  // 3行以上の連続空行を2行に圧縮
-  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+  return htmlParts.join("\n");
 }
 
-function escapeHtml(str) {
+/** HTMLタグを含む行の生テキスト部分だけエスケープする */
+function escLine(line) {
+  // <strong>...</strong> タグを保持しつつ、それ以外をエスケープ
+  return line.replace(/(<strong>.*?<\/strong>)|([^<]+)/g, (match, tag, text) => {
+    if (tag) return tag;           // <strong>タグはそのまま
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  });
+}
+
+/** 文字列全体をHTMLエスケープ（タグなし前提） */
+function esc(str) {
   return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>");
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtml(str) {
+  // formatReading を使わない箇所（エラー表示など）用
+  return esc(str).replace(/\n/g, "<br>");
 }
 
 // ===== 画像生成（Canvas API） =====
