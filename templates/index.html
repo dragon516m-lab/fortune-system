@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>✨ オリジナル占い鑑定システム</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <header>
+    <h1>✨ 天命鑑定 ✨</h1>
+    <p>四柱推命 × 数秘術 × 動物占い　オリジナル統合鑑定</p>
+  </header>
+
+  <main>
+    <!-- 入力フォーム -->
+    <section id="input-section" class="card">
+      <h2>🔮 鑑定を始める</h2>
+      <form id="fortune-form">
+        <div class="form-group">
+          <label for="name">お名前（任意）</label>
+          <input type="text" id="name" placeholder="山田 太郎">
+        </div>
+        <div class="form-group">
+          <label for="birthdate">生年月日 <span class="required">*</span></label>
+          <input type="date" id="birthdate" required>
+        </div>
+        <div class="form-group">
+          <label for="concern">お悩み・ご相談 <span class="required">*</span></label>
+          <textarea id="concern" rows="4" placeholder="例：仕事での人間関係に悩んでいます。今後どのように進めばよいでしょうか..." required></textarea>
+        </div>
+        <button type="submit" class="btn-primary" id="submit-btn">
+          <span class="btn-icon">✨</span> 鑑定する
+        </button>
+      </form>
+    </section>
+
+    <!-- 鑑定結果 -->
+    <section id="result-section" class="card hidden">
+      <div id="fortune-stats" class="stats-grid hidden">
+        <div class="stat-card shichusuimei">
+          <h3>🌙 四柱推命</h3>
+          <div id="pillars"></div>
+          <div id="five-elements"></div>
+        </div>
+        <div class="stat-card numerology">
+          <h3>🔢 数秘術</h3>
+          <div id="numbers"></div>
+        </div>
+        <div class="stat-card animal">
+          <h3>🦁 動物占い</h3>
+          <div id="animals"></div>
+        </div>
+      </div>
+
+      <div class="reading-header">
+        <h2>📜 鑑定結果</h2>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>天命を読み解いています...</p>
+      </div>
+
+      <div id="reading-text" class="reading-text"></div>
+
+      <div id="action-buttons" class="action-buttons hidden">
+        <button id="image-btn" class="btn-primary" style="width:auto;padding:12px 24px">
+          🖼️ 画像として保存
+        </button>
+        <button id="download-btn" class="btn-secondary">
+          📥 テキスト保存
+        </button>
+        <button id="copy-btn" class="btn-secondary">
+          📋 コピー
+        </button>
+        <button id="new-reading-btn" class="btn-outline">
+          🔮 新しい鑑定をする
+        </button>
+      </div>
+    </section>
+
+    <!-- 履歴 -->
+    <section id="history-section" class="card">
+      <h2>📚 鑑定履歴</h2>
+      <div id="history-list">
+        <p class="empty-message">まだ鑑定履歴はありません</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>四柱推命 × 数秘術 × 動物占い　統合鑑定システム</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
