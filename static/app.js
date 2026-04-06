@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("download-btn").addEventListener("click", handleDownload);
   document.getElementById("copy-btn").addEventListener("click", handleCopy);
   document.getElementById("new-reading-btn").addEventListener("click", resetForm);
+  document.getElementById("retry-btn").addEventListener("click", handleRetry);
 
   // 生年月日の最大値を今日に設定
   document.getElementById("birthdate").max = new Date().toISOString().split("T")[0];
@@ -69,6 +70,7 @@ async function handleSubmit(e) {
     const decoder = new TextDecoder();
     let buffer = "";
     let statsShown = false;
+    let receivedDone = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -89,7 +91,6 @@ async function handleSubmit(e) {
         }
 
         if (payload.status === "connecting") {
-          // 接続確認 — ローディング非表示・カーソル表示
           loading.classList.add("hidden");
           readingText.innerHTML = '<span class="cursor"></span>';
         }
@@ -100,11 +101,11 @@ async function handleSubmit(e) {
         }
 
         if (payload.done) {
+          receivedDone = true;
           readingText.innerHTML = formatReading(currentReadingText);
           currentFileId = payload.file_id;
           currentFortuneData = payload.fortune_data;
 
-          // 命式データ表示
           if (!statsShown) {
             renderFortuneStats(payload.fortune_data);
             statsGrid.classList.remove("hidden");
@@ -112,14 +113,26 @@ async function handleSubmit(e) {
           }
 
           actionButtons.classList.remove("hidden");
+          document.getElementById("retry-area").classList.add("hidden");
           loadHistory();
         }
       }
     }
 
+    // doneイベントなしにストリームが終了した場合
+    if (!receivedDone && currentReadingText) {
+      readingText.innerHTML = formatReading(currentReadingText);
+      document.getElementById("retry-area").classList.remove("hidden");
+    }
+
   } catch (err) {
     loading.classList.add("hidden");
-    readingText.textContent = `エラーが発生しました: ${err.message}`;
+    if (currentReadingText) {
+      readingText.innerHTML = formatReading(currentReadingText);
+      document.getElementById("retry-area").classList.remove("hidden");
+    } else {
+      readingText.textContent = `エラーが発生しました: ${err.message}`;
+    }
   } finally {
     submitBtn.disabled = false;
     submitBtn.innerHTML = '<span class="btn-icon">✨</span> 鑑定する';
@@ -191,9 +204,64 @@ async function handleCopy() {
   }
 }
 
+// ===== 続きを取得 =====
+async function handleRetry() {
+  const retryArea = document.getElementById("retry-area");
+  const readingText = document.getElementById("reading-text");
+  const retryBtn = document.getElementById("retry-btn");
+
+  retryBtn.disabled = true;
+  retryBtn.textContent = "⏳ 続きを取得中...";
+
+  const concern = document.getElementById("concern").value.trim();
+  const partialText = currentReadingText;
+
+  try {
+    const response = await fetch("/api/continue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partial_text: partialText, concern }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = JSON.parse(line.slice(6));
+
+        if (payload.chunk) {
+          currentReadingText += payload.chunk;
+          readingText.innerHTML = formatReading(currentReadingText) + '<span class="cursor"></span>';
+        }
+
+        if (payload.done) {
+          readingText.innerHTML = formatReading(currentReadingText);
+          retryArea.classList.add("hidden");
+        }
+      }
+    }
+  } catch (err) {
+    retryBtn.textContent = "🔄 続きを取得する";
+  } finally {
+    retryBtn.disabled = false;
+    retryBtn.textContent = "🔄 続きを取得する";
+  }
+}
+
 // ===== フォームリセット =====
 function resetForm() {
   document.getElementById("result-section").classList.add("hidden");
+  document.getElementById("retry-area").classList.add("hidden");
   document.getElementById("fortune-form").reset();
   document.getElementById("input-section").scrollIntoView({ behavior: "smooth" });
   currentFileId = null;

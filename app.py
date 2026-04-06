@@ -17,7 +17,7 @@ logging.getLogger("werkzeug").disabled = True
 logging.getLogger("werkzeug").propagate = False
 
 import anthropic
-from flask import Flask, render_template, request, Response, send_file
+from flask import Flask, render_template, request, Response, send_file, stream_with_context
 from dotenv import load_dotenv
 
 from fortune.calculator import calculate_all, format_for_prompt
@@ -148,7 +148,58 @@ def get_fortune():
             yield sse_bytes({"error": safe_str(e)})
 
     return Response(
-        generate(),
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/continue", methods=["POST"])
+def continue_fortune():
+    body         = request.get_json(force=True, silent=True) or {}
+    partial_text = str(body.get("partial_text") or "")
+    concern      = str(body.get("concern") or "")
+
+    if not partial_text:
+        return json_resp({"error": "missing_params"}, 400)
+
+    continuation_prompt = (
+        "\u4ee5\u4e0b\u306e\u5360\u3044\u9451\u5b9a\u6587\u306e\u7d9a\u304d\u3092\u66f8\u3044\u3066\u304f\u3060\u3055\u3044\u3002\n"
+        "\u3059\u3067\u306b\u66f8\u304b\u308c\u305f\u5185\u5bb9\u306f\u7e70\u308a\u8fd4\u3055\u305a\u3001\u7d9a\u304d\u306e\u672a\u5b8c\u6210\u30bb\u30af\u30b7\u30e7\u30f3\u306e\u307f\u66f8\u3044\u3066\u304f\u3060\u3055\u3044\u3002\n\n"
+        "\u3053\u308c\u307e\u3067\u306e\u9451\u5b9a\u6587\uff1a\n"
+    ) + partial_text
+
+    def generate():
+        try:
+            yield sse_bytes({"status": "connecting"})
+            with get_client().messages.stream(
+                model="claude-opus-4-6",
+                max_tokens=8192,
+                system=(
+                    "\u3042\u306a\u305f\u306f\u56db\u67f1\u63a8\u547d\u30fb"
+                    "\u6570\u79d8\u8853\u30fb\u52d5\u7269\u5360\u3044\u306b"
+                    "\u7cbe\u901a\u3057\u305f\u5360\u3044\u5e2b\u3067\u3059\u3002"
+                    "\u6e29\u304b\u307f\u306e\u3042\u308b\u65e5\u672c\u8a9e\u3067"
+                    "\u3001\u76f8\u8ac7\u8005\u306b\u5bc4\u308a\u6dfb\u3063\u305f"
+                    "\u6df1\u307f\u306e\u3042\u308b\u9451\u5b9a\u6587\u3092"
+                    "\u66f8\u3044\u3066\u304f\u3060\u3055\u3044\u3002"
+                    "##\u3084**\u306a\u3069\u306e\u30de\u30fc\u30af\u30c0\u30a6\u30f3"
+                    "\u8a18\u6cd5\u306f\u4e00\u5207\u4f7f\u308f\u306a\u3044\u3067"
+                    "\u304f\u3060\u3055\u3044\u3002\u898b\u51fa\u3057\u306f"
+                    "\u300a\u3010\u3011\u300b\u3067\u56f2\u3093\u3060\u30d7\u30ec"
+                    "\u30fc\u30f3\u30c6\u30ad\u30b9\u30c8\u3060\u3051\u3092\u4f7f"
+                    "\u3063\u3066\u304f\u3060\u3055\u3044\u3002"
+                ),
+                messages=[{"role": "user", "content": continuation_prompt}],
+            ) as stream:
+                for chunk in stream.text_stream:
+                    yield sse_bytes({"chunk": chunk})
+            yield sse_bytes({"done": True})
+        except Exception as e:
+            yield sse_bytes({"error": safe_str(e)})
+
+    return Response(
+        stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
