@@ -104,7 +104,7 @@ def get_fortune():
             full_text = ""
             with get_client().messages.stream(
                 model="claude-opus-4-6",
-                max_tokens=8192,
+                max_tokens=16384,
                 system=(
                     "\u3042\u306a\u305f\u306f\u56db\u67f1\u63a8\u547d\u30fb"
                     "\u6570\u79d8\u8853\u30fb\u52d5\u7269\u5360\u3044\u306b"
