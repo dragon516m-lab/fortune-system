@@ -14,6 +14,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("copy-btn").addEventListener("click", handleCopy);
   document.getElementById("new-reading-btn").addEventListener("click", resetForm);
   document.getElementById("retry-btn").addEventListener("click", handleRetry);
+  document.getElementById("threads-btn").addEventListener("click", handleThreadsPost);
+  document.getElementById("detail-option-cb").addEventListener("change", handleDetailOptionChange);
+  document.getElementById("generate-questions-btn").addEventListener("click", generateFollowUpQuestions);
 
   // 生年月日の最大値を今日に設定
   document.getElementById("birthdate").max = new Date().toISOString().split("T")[0];
@@ -54,10 +57,11 @@ async function handleSubmit(e) {
   resultSection.scrollIntoView({ behavior: "smooth" });
 
   try {
+    const detailContext = getFollowUpContext();
     const response = await fetch("/api/fortune", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, birthdate, concern }),
+      body: JSON.stringify({ name, birthdate, concern, detail_context: detailContext || "" }),
     });
 
     if (!response.ok) {
@@ -197,11 +201,73 @@ function handleDownload() {
 async function handleCopy() {
   if (!currentReadingText) return;
   try {
-    await navigator.clipboard.writeText(currentReadingText);
+    const text = currentReadingText.replace(/。(\p{Extended_Pictographic}*)/gu, (_, e) => "。" + e + "\n");
+    await navigator.clipboard.writeText(text);
     showToast("コピーしました ✓");
   } catch {
     showToast("コピーに失敗しました");
   }
+}
+
+// ===== Threads投稿 =====
+async function handleThreadsPost() {
+  if (!currentReadingText || !currentFortuneData) return;
+
+  const btn = document.getElementById("threads-btn");
+  btn.disabled = true;
+  btn.textContent = "⏳ 投稿中...";
+
+  const text = buildThreadsText(currentFortuneData, currentReadingText);
+
+  try {
+    const res = await fetch("/api/post-threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+
+    if (data.error === "threads_not_configured") {
+      showToast("Threadsの設定が必要です（.envを確認）");
+    } else if (data.error) {
+      showToast("投稿に失敗しました: " + (data.error));
+    } else {
+      showToast("Threadsに投稿しました ✓");
+    }
+  } catch (err) {
+    showToast("投稿に失敗しました");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🧵 Threadsに投稿";
+  }
+}
+
+/** Threads用テキストを組み立てる（500字以内） */
+function buildThreadsText(fortuneData, readingRaw) {
+  const ani = fortuneData.animal;
+  const num = fortuneData.numerology;
+
+  // 鑑定文から最初のセクションのテキストを抜き出す
+  const plain = readingRaw
+    .replace(/【[^】]*】/g, "")   // 【見出し】除去
+    .replace(/^\s*[-#*>]+\s*/gm, "") // Markdown記号除去
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+  const excerpt = plain.length > 200 ? plain.slice(0, 197) + "…" : plain;
+
+  const header = [
+    "✨ 天命鑑定 ✨",
+    "",
+    `${ani.year_animal.emoji} ${ani.year_animal.animal} × ${ani.day_animal.emoji} ${ani.day_animal.animal}`,
+    `🔢 ライフパス ${num.life_path_number}`,
+    "",
+  ].join("\n");
+
+  const hashtags = "\n\n#占い #四柱推命 #数秘術 #動物占い #天命鑑定";
+  const maxExcerpt = 500 - header.length - hashtags.length;
+  const body = plain.length > maxExcerpt ? plain.slice(0, maxExcerpt - 1) + "…" : plain;
+
+  return header + body + hashtags;
 }
 
 // ===== 続きを取得 =====
@@ -256,6 +322,134 @@ async function handleRetry() {
     retryBtn.disabled = false;
     retryBtn.textContent = "🔄 続きを取得する";
   }
+}
+
+// ===== 詳細鑑定オプション =====
+
+function handleDetailOptionChange(e) {
+  const followUpSection = document.getElementById("follow-up-section");
+  if (e.target.checked) {
+    followUpSection.classList.remove("hidden");
+  } else {
+    followUpSection.classList.add("hidden");
+    const container = document.getElementById("questions-container");
+    container.classList.add("hidden");
+    container.innerHTML = "";
+  }
+}
+
+async function generateFollowUpQuestions() {
+  const concern = document.getElementById("concern").value.trim();
+  if (!concern) {
+    alert("まずお悩み・ご相談を入力してください");
+    return;
+  }
+
+  const btn       = document.getElementById("generate-questions-btn");
+  const loading   = document.getElementById("questions-loading");
+  const container = document.getElementById("questions-container");
+
+  btn.disabled = true;
+  btn.textContent = "⏳ 生成中...";
+  loading.classList.remove("hidden");
+  container.classList.add("hidden");
+  container.innerHTML = "";
+
+  try {
+    const res  = await fetch("/api/generate-questions", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ concern }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      alert("質問の生成に失敗しました: " + data.error);
+      return;
+    }
+
+    renderFollowUpQuestions(data.questions);
+    container.classList.remove("hidden");
+  } catch (err) {
+    alert("質問の生成に失敗しました");
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "🔍 掘り下げ質問を生成する";
+    loading.classList.add("hidden");
+  }
+}
+
+function renderFollowUpQuestions(questions) {
+  const container = document.getElementById("questions-container");
+  container.innerHTML = `
+    ${questions.map((q, i) => `
+      <div class="question-item">
+        <p class="question-label">Q${i + 1}.</p>
+        <p class="question-text" contenteditable="true" data-qi="${i}">${esc(q)}</p>
+        <textarea
+          class="question-answer"
+          data-qi="${i}"
+          rows="2"
+          placeholder="（任意）こちらに回答を入力してください..."
+        ></textarea>
+      </div>
+    `).join("")}
+    <button type="button" class="btn-secondary" onclick="copyFollowUpQA()" style="margin-top:12px;width:100%;padding:10px;font-size:0.875rem">
+      📋 Q&amp;Aを一括コピー
+    </button>
+  `;
+}
+
+async function copyFollowUpQA() {
+  const container = document.getElementById("questions-container");
+  const items     = container.querySelectorAll(".question-item");
+  const concern   = document.getElementById("concern").value.trim();
+
+  let text = `【基本情報】\n相談内容: ${concern}\n\n【詳細情報】\n`;
+  items.forEach((item, i) => {
+    const q = item.querySelector(".question-text")?.textContent.trim() || "";
+    const a = item.querySelector(".question-answer")?.value.trim() || "";
+    text += `Q${i + 1}: ${q}\nA: ${a || "（未回答）"}\n\n`;
+  });
+  text = text.trimEnd();
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Q&Aをコピーしました ✓");
+  } catch {
+    showToast("コピーに失敗しました");
+  }
+}
+
+function getFollowUpContext() {
+  const cb        = document.getElementById("detail-option-cb");
+  const container = document.getElementById("questions-container");
+  if (!cb.checked || container.classList.contains("hidden") || !container.innerHTML) return null;
+
+  const items = container.querySelectorAll(".question-item");
+  if (items.length === 0) return null;
+
+  const concern    = document.getElementById("concern").value.trim();
+  let hasAnyAnswer = false;
+  const qaList     = [];
+
+  items.forEach((item) => {
+    const qEl = item.querySelector(".question-text");
+    const aEl = item.querySelector(".question-answer");
+    const q   = qEl ? qEl.textContent.trim() : "";
+    const a   = aEl ? aEl.value.trim() : "";
+    if (a) hasAnyAnswer = true;
+    qaList.push({ q, a });
+  });
+
+  if (!hasAnyAnswer) return null;
+
+  let ctx = `【基本情報】\n相談内容: ${concern}\n\n【詳細情報】\n`;
+  qaList.forEach(({ q, a }) => {
+    ctx += `Q: ${q}\nA: ${a || "（回答なし）"}\n\n`;
+  });
+  ctx += "以上をもとに鑑定します";
+  return ctx;
 }
 
 // ===== フォームリセット =====
@@ -404,7 +598,7 @@ function formatReading(raw) {
     // 通常行 — esc済みでない部分をエスケープしてから追加
     // ※上記で強タグを挿入済みなので、残りをescapeしてはいけない
     // → 代わりに生テキスト部分だけをescする処理を行う
-    htmlParts.push('<p class="reading-line">' + escLine(line) + '</p>');
+    htmlParts.push('<p class="reading-line">' + escLine(line).replace(/。(\p{Extended_Pictographic}*)/gu, (_, e) => '。' + e + '<br>') + '</p>');
   }
 
   return htmlParts.join("\n");

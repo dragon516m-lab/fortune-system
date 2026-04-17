@@ -356,6 +356,87 @@ footer {
   border-top: 1px solid var(--border);
 }
 
+/* ===== 詳細鑑定オプション ===== */
+.detail-option-box {
+  margin-top: 24px;
+  padding: 18px 20px;
+  background: rgba(124, 77, 255, 0.07);
+  border: 1px solid rgba(124, 77, 255, 0.25);
+  border-radius: 12px;
+}
+
+.detail-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.detail-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.detail-generate-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.95rem;
+  margin-top: 16px;
+}
+
+.questions-loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-top: 12px;
+}
+
+.questions-header-note {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.question-item {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(124, 77, 255, 0.2);
+  border-radius: 10px;
+}
+
+.question-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.question-text {
+  font-size: 0.9rem;
+  color: var(--primary-light);
+  font-weight: 600;
+  margin-bottom: 10px;
+  outline: none;
+  border-bottom: 1px dashed rgba(179, 157, 219, 0.35);
+  padding-bottom: 4px;
+  line-height: 1.6;
+}
+
+.question-text:focus {
+  border-bottom-color: var(--primary-light);
+}
+
+.question-answer {
+  font-size: 0.875rem;
+}
+
 /* ===== コピー完了トースト ===== */
 .toast {
   position: fixed;

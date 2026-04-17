@@ -9,7 +9,10 @@
 <body>
   <div class="stars-bg"></div>
 
-  <header>
+  <header style="position:relative">
+    <div style="position:absolute;top:16px;right:20px">
+      <a href="/coconala-orders" style="color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">📋 受注管理</a>
+    </div>
     <h1>✨ 天命鑑定 ✨</h1>
     <p>四柱推命 × 数秘術 × 動物占い　オリジナル統合鑑定</p>
   </header>
@@ -35,6 +38,27 @@
           <span class="btn-icon">✨</span> 鑑定する
         </button>
       </form>
+
+      <!-- 詳細鑑定オプション -->
+      <div class="detail-option-box">
+        <label class="detail-checkbox-label">
+          <input type="checkbox" id="detail-option-cb">
+          <span>✨ 詳細鑑定を希望する（掘り下げ質問を生成します）</span>
+        </label>
+
+        <div id="follow-up-section" class="hidden">
+          <button type="button" id="generate-questions-btn" class="btn-secondary detail-generate-btn">
+            🔍 掘り下げ質問を生成する
+          </button>
+
+          <div id="questions-loading" class="hidden questions-loading">
+            <div class="spinner" style="width:28px;height:28px;margin:0 auto 10px"></div>
+            <p>質問を生成しています...</p>
+          </div>
+
+          <div id="questions-container" class="hidden"></div>
+        </div>
+      </div>
     </section>
 
     <!-- 鑑定結果 -->
@@ -75,6 +99,9 @@
         </button>
         <button id="copy-btn" class="btn-secondary">
           📋 コピー
+        </button>
+        <button id="threads-btn" class="btn-secondary" style="background:rgba(0,0,0,0.3);border-color:rgba(255,255,255,0.3)">
+          🧵 Threadsに投稿
         </button>
         <button id="new-reading-btn" class="btn-outline">
           🔮 新しい鑑定をする

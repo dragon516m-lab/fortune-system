@@ -1,5 +1,6 @@
 """三つの占術を統合する計算モジュール"""
 
+import datetime
 from . import shichusuimei, numerology, animal
 
 
@@ -29,11 +30,14 @@ def format_for_prompt(fortune_data: dict, concern: str, name: str = "") -> str:
     bd = fortune_data["birthdate"]
 
     name_str = f"お名前：{name}\n" if name else ""
+    today = datetime.date.today()
+    today_str = f"{today.year}年{today.month}月{today.day}日"
 
     prompt = f"""以下の鑑定データをもとに、深みのある占い鑑定文を日本語で作成してください。
 
 【基本情報】
 {name_str}生年月日：{bd['year']}年{bd['month']}月{bd['day']}日
+鑑定日（今日）：{today_str}
 お悩み・ご相談：{concern}
 
 【四柱推命データ】
