@@ -405,6 +405,29 @@ def post_threads():
         return json_resp({"error": safe_str(e)}, 500)
 
 
+@app.route("/api/debug-supabase")
+def debug_supabase():
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_ANON_KEY", "")
+    info = {
+        "url_set": bool(url),
+        "key_set": bool(key),
+        "key_prefix": key[:20] if key else "",
+        "sb_create_available": _sb_create is not None,
+    }
+    sb = get_supabase()
+    info["client_created"] = sb is not None
+    if sb:
+        try:
+            res = sb.table("history").select("id").limit(1).execute()
+            info["query_ok"] = True
+            info["row_count"] = len(res.data or [])
+        except Exception as e:
+            info["query_ok"] = False
+            info["query_error"] = safe_str(e)
+    return json_resp(info)
+
+
 @app.route("/api/history-list")
 def get_history_list():
     sb = get_supabase()
