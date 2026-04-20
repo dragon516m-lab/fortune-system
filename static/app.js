@@ -143,6 +143,7 @@ async function handleSubmit(e) {
     // doneイベントなしにストリームが終了した場合
     if (!receivedDone && currentReadingText) {
       readingText.innerHTML = formatReading(currentReadingText);
+      actionButtons.classList.remove("hidden");
       document.getElementById("retry-area").classList.remove("hidden");
     }
 

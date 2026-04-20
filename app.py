@@ -267,25 +267,27 @@ def get_fortune():
                     full_text += chunk
                     yield sse_bytes({"chunk": chunk})
 
-            ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            fid  = f"fortune_{ts}"
+            ts  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            fid = f"fortune_{ts}"
+
+            # doneを先に送ってUIをすぐ更新する
+            yield sse_bytes({"done": True, "file_id": fid, "fortune_data": fortune_data})
+
+            # 保存はdone送信後に実施（UIをブロックしない）
             try:
                 path = RESULTS_DIR / f"{fid}.json"
-                save = {
+                path.write_bytes(json.dumps({
                     "timestamp":    datetime.datetime.now().isoformat(),
                     "name":         name,
                     "birthdate":    birthdate_s,
                     "concern":      concern,
                     "fortune_data": fortune_data,
                     "reading":      full_text,
-                }
-                path.write_bytes(
-                    json.dumps(save, ensure_ascii=False, indent=2).encode("utf-8")
-                )
+                }, ensure_ascii=False, indent=2).encode("utf-8"))
             except Exception:
-                pass  # ファイル保存は補助的; Supabaseが主ストレージ
+                pass
 
-            hist_id = append_history_entry({
+            append_history_entry({
                 "timestamp":           datetime.datetime.now().isoformat(),
                 "name":                name,
                 "birthdate":           birthdate_s,
@@ -299,8 +301,6 @@ def get_fortune():
                 "chat_messages":       [],
                 "file_id":             fid,
             })
-
-            yield sse_bytes({"done": True, "file_id": fid, "fortune_data": fortune_data, "history_id": hist_id})
 
         except Exception as e:
             yield sse_bytes({"error": safe_str(e)})
