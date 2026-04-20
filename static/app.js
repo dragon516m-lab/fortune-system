@@ -624,7 +624,7 @@ async function loadHistory() {
     }
 
     listEl.innerHTML = items.map(item => `
-      <div class="history-item" onclick="loadReading('${item.file_id}')">
+      <div class="history-item" onclick="loadReading('${item.file_id}', ${item.history_id != null ? item.history_id : 'null'})">
         <div>
           <div class="history-concern">${item.name ? `【${item.name}】` : ""}${item.concern}</div>
           <div class="history-meta">${item.timestamp} | ${item.birthdate}</div>
@@ -638,24 +638,38 @@ async function loadHistory() {
 }
 
 // ===== 過去の鑑定を表示 =====
-async function loadReading(fileId) {
+async function loadReading(fileId, historyId) {
   try {
-    const res = await fetch(`/api/reading/${fileId}`);
-    const data = await res.json();
+    let data;
+    if (historyId) {
+      const res = await fetch(`/api/history/${historyId}`);
+      data = await res.json();
+      data.reading = data.result || "";
+    } else {
+      const res = await fetch(`/api/reading/${fileId}`);
+      data = await res.json();
+    }
 
-    const resultSection = document.getElementById("result-section");
-    const statsGrid = document.getElementById("fortune-stats");
-    const readingText = document.getElementById("reading-text");
-    const actionButtons = document.getElementById("action-buttons");
+    const resultSection  = document.getElementById("result-section");
+    const statsGrid      = document.getElementById("fortune-stats");
+    const readingText    = document.getElementById("reading-text");
+    const actionButtons  = document.getElementById("action-buttons");
 
     resultSection.classList.remove("hidden");
-    statsGrid.classList.remove("hidden");
-    renderFortuneStats(data.fortune_data);
-    readingText.innerHTML = formatReading(data.reading);
+    readingText.innerHTML = formatReading(data.reading || "");
     actionButtons.classList.remove("hidden");
 
-    currentFileId = fileId;
-    currentReadingText = data.reading;
+    if (data.fortune_data) {
+      renderFortuneStats(data.fortune_data);
+      statsGrid.classList.remove("hidden");
+    } else {
+      statsGrid.classList.add("hidden");
+    }
+
+    currentFileId      = fileId;
+    currentReadingText = data.reading || "";
+    currentHistoryId   = historyId || null;
+    currentFortuneData = data.fortune_data || null;
 
     resultSection.scrollIntoView({ behavior: "smooth" });
   } catch (err) {

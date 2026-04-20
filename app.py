@@ -266,18 +266,21 @@ def get_fortune():
 
             ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             fid  = f"fortune_{ts}"
-            path = RESULTS_DIR / f"{fid}.json"
-            save = {
-                "timestamp":    datetime.datetime.now().isoformat(),
-                "name":         name,
-                "birthdate":    birthdate_s,
-                "concern":      concern,
-                "fortune_data": fortune_data,
-                "reading":      full_text,
-            }
-            path.write_bytes(
-                json.dumps(save, ensure_ascii=False, indent=2).encode("utf-8")
-            )
+            try:
+                path = RESULTS_DIR / f"{fid}.json"
+                save = {
+                    "timestamp":    datetime.datetime.now().isoformat(),
+                    "name":         name,
+                    "birthdate":    birthdate_s,
+                    "concern":      concern,
+                    "fortune_data": fortune_data,
+                    "reading":      full_text,
+                }
+                path.write_bytes(
+                    json.dumps(save, ensure_ascii=False, indent=2).encode("utf-8")
+                )
+            except Exception:
+                pass  # ファイル保存は補助的; Supabaseが主ストレージ
 
             hist_id = append_history_entry({
                 "timestamp":           datetime.datetime.now().isoformat(),
@@ -404,17 +407,37 @@ def post_threads():
 
 @app.route("/api/history-list")
 def get_history_list():
+    sb = get_supabase()
+    if sb:
+        try:
+            res = sb.table("history").select("id,timestamp,name,birthdate,consultation,file_id").order("id", desc=True).limit(20).execute()
+            items = []
+            for row in (res.data or []):
+                concern = str(row.get("consultation") or "")
+                items.append({
+                    "file_id":    row.get("file_id") or "",
+                    "history_id": row.get("id"),
+                    "timestamp":  str(row.get("timestamp", ""))[:16].replace("T", " "),
+                    "name":       str(row.get("name") or ""),
+                    "birthdate":  str(row.get("birthdate") or ""),
+                    "concern":    concern[:30] + "..." if len(concern) > 30 else concern,
+                })
+            return Response(response=_safe_dumps(items), content_type="application/json; charset=utf-8")
+        except Exception:
+            pass
+    # Supabase未設定時はローカルファイルにフォールバック
     items = []
     for p in sorted(RESULTS_DIR.glob("fortune_*.json"), reverse=True)[:20]:
         try:
             data    = json.loads(p.read_bytes())
             concern = str(data.get("concern") or "")
             items.append({
-                "file_id":   p.stem,
-                "timestamp": str(data.get("timestamp", ""))[:16].replace("T", " "),
-                "name":      str(data.get("name") or ""),
-                "birthdate": str(data.get("birthdate") or ""),
-                "concern":   concern[:30] + "..." if len(concern) > 30 else concern,
+                "file_id":    p.stem,
+                "history_id": None,
+                "timestamp":  str(data.get("timestamp", ""))[:16].replace("T", " "),
+                "name":       str(data.get("name") or ""),
+                "birthdate":  str(data.get("birthdate") or ""),
+                "concern":    concern[:30] + "..." if len(concern) > 30 else concern,
             })
         except Exception:
             pass
