@@ -366,7 +366,11 @@ function openChat() {
 async function sendChatMessage() {
   const input = document.getElementById("chat-input");
   const text  = input.value.trim();
-  if (!text || !currentReadingText) return;
+  if (!text) return;
+  if (!currentReadingText) {
+    alert("鑑定結果が読み込まれていません。ページを再読み込みして、もう一度鑑定を実行してください。");
+    return;
+  }
 
   const sendBtn = document.getElementById("chat-send-btn");
   sendBtn.disabled = true;
