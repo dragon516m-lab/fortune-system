@@ -190,7 +190,8 @@ def generate_questions():
         "- 過去の経緯を聞く\n"
         "- 理想の未来を聞く\n\n"
         "丁寧で優しい口調で、お客様が答えやすい質問にしてください。\n"
-        "箇条書きで出力してください。"
+        "質問のみを番号付きで出力してください。前置きや説明文は一切不要です。\n"
+        "各質問は必ず「？」で終わらせてください。"
     )
 
     try:
@@ -208,7 +209,7 @@ def generate_questions():
                 continue
             cleaned = re.sub(r"^[\d]+[.．）)]\s*", "", line)
             cleaned = re.sub(r"^[-・•*＊]\s*", "", cleaned).strip()
-            if cleaned and len(cleaned) > 5:
+            if cleaned and len(cleaned) > 5 and "？" in cleaned:
                 questions.append(cleaned)
 
         return json_resp({"questions": questions})
