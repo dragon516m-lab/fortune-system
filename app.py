@@ -23,6 +23,11 @@ import requests as http_requests
 from flask import Flask, render_template, request, Response, send_file, stream_with_context
 from dotenv import load_dotenv
 
+try:
+    from supabase import create_client as _sb_create
+except ImportError:
+    _sb_create = None
+
 from fortune.calculator import calculate_all, format_for_prompt
 
 load_dotenv()
@@ -41,6 +46,22 @@ DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
 
+# Supabase（設定があれば使用、なければJSONファイルにフォールバック）
+_supabase = None
+
+def get_supabase():
+    global _supabase
+    if _supabase is not None:
+        return _supabase
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_ANON_KEY", "")
+    if url and key and _sb_create:
+        try:
+            _supabase = _sb_create(url, key)
+        except Exception:
+            _supabase = None
+    return _supabase
+
 
 def load_orders():
     if not ORDERS_FILE.exists():
@@ -55,6 +76,13 @@ def save_orders(orders):
 
 
 def load_history_data():
+    sb = get_supabase()
+    if sb:
+        try:
+            res = sb.table("history").select("*").order("id").execute()
+            return res.data or []
+        except Exception:
+            pass
     if not HISTORY_FILE.exists():
         return []
     try:
@@ -64,6 +92,15 @@ def load_history_data():
 
 
 def append_history_entry(entry: dict) -> int:
+    sb = get_supabase()
+    if sb:
+        try:
+            row = {k: v for k, v in entry.items() if k != "id"}
+            res = sb.table("history").insert(row).execute()
+            return (res.data[0]["id"]) if res.data else 0
+        except Exception:
+            pass
+    # JSONファイルへフォールバック
     history = load_history_data()
     next_id = (history[-1]["id"] + 1) if history else 1
     entry["id"] = next_id
@@ -837,6 +874,14 @@ def export_history_csv():
 def update_history_chat(history_id):
     body          = request.get_json(force=True, silent=True) or {}
     chat_messages = body.get("chat_messages") or []
+
+    sb = get_supabase()
+    if sb:
+        try:
+            sb.table("history").update({"chat_messages": chat_messages}).eq("id", history_id).execute()
+            return json_resp({"success": True})
+        except Exception as e:
+            return json_resp({"error": safe_str(e)}, 500)
 
     history = load_history_data()
     for h in history:
