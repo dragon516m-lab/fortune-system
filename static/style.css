@@ -356,6 +356,69 @@ footer {
   border-top: 1px solid var(--border);
 }
 
+/* ===== チャット ===== */
+.chat-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 28px 0 16px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.chat-divider::before,
+.chat-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+}
+
+#chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.chat-bubble-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.chat-bubble-wrap.user  { justify-content: flex-end; }
+.chat-bubble-wrap.assistant { justify-content: flex-start; }
+
+.chat-bubble {
+  max-width: 82%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 0.92rem;
+  line-height: 1.8;
+}
+.chat-bubble-wrap.user .chat-bubble {
+  background: linear-gradient(135deg, var(--primary), #9c5fff);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.chat-bubble-wrap.assistant .chat-bubble {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-input-area {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.chat-input-area textarea {
+  flex: 1;
+  resize: none;
+  border-radius: 12px;
+  font-size: 0.95rem;
+}
+
 /* ===== 詳細鑑定オプション ===== */
 .detail-option-box {
   margin-top: 24px;
@@ -423,18 +486,26 @@ footer {
   color: var(--primary-light);
   font-weight: 600;
   margin-bottom: 10px;
-  outline: none;
-  border-bottom: 1px dashed rgba(179, 157, 219, 0.35);
-  padding-bottom: 4px;
   line-height: 1.6;
 }
 
-.question-text:focus {
-  border-bottom-color: var(--primary-light);
+.answer-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.answer-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  padding-top: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .question-answer {
   font-size: 0.875rem;
+  flex: 1;
 }
 
 /* ===== コピー完了トースト ===== */

@@ -37,6 +37,10 @@ ORDERS_DIR = Path("orders")
 ORDERS_DIR.mkdir(exist_ok=True)
 ORDERS_FILE = ORDERS_DIR / "coconala_orders.json"
 
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+HISTORY_FILE = DATA_DIR / "history.json"
+
 
 def load_orders():
     if not ORDERS_FILE.exists():
@@ -48,6 +52,26 @@ def save_orders(orders):
     ORDERS_FILE.write_bytes(
         json.dumps(orders, ensure_ascii=False, indent=2).encode("utf-8")
     )
+
+
+def load_history_data():
+    if not HISTORY_FILE.exists():
+        return []
+    try:
+        return json.loads(HISTORY_FILE.read_bytes())
+    except Exception:
+        return []
+
+
+def append_history_entry(entry: dict) -> int:
+    history = load_history_data()
+    next_id = (history[-1]["id"] + 1) if history else 1
+    entry["id"] = next_id
+    history.append(entry)
+    HISTORY_FILE.write_bytes(
+        json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+    return next_id
 
 
 FORTUNE_SYSTEM_PROMPT = (
@@ -159,10 +183,14 @@ def generate_questions():
 def get_fortune():
     body = request.get_json(force=True, silent=True) or {}
 
-    name           = str(body.get("name") or "")
-    birthdate_s    = str(body.get("birthdate") or "")
-    concern        = str(body.get("concern") or "")
-    detail_context = str(body.get("detail_context") or "")
+    name               = str(body.get("name") or "")
+    birthdate_s        = str(body.get("birthdate") or "")
+    concern            = str(body.get("concern") or "")
+    detail_context     = str(body.get("detail_context") or "")
+    detailed_questions = list(body.get("detailed_questions") or [])
+    detailed_answers   = list(body.get("detailed_answers") or [])
+    partner_birthdate  = str(body.get("partner_birthdate") or "")
+    relationship       = str(body.get("relationship") or "")
 
     if not birthdate_s or not concern:
         return json_resp({"error": "missing_params"}, 400)
@@ -213,7 +241,22 @@ def get_fortune():
                 json.dumps(save, ensure_ascii=False, indent=2).encode("utf-8")
             )
 
-            yield sse_bytes({"done": True, "file_id": fid, "fortune_data": fortune_data})
+            hist_id = append_history_entry({
+                "timestamp":           datetime.datetime.now().isoformat(),
+                "name":                name,
+                "birthdate":           birthdate_s,
+                "consultation":        concern,
+                "partner_birthdate":   partner_birthdate,
+                "relationship":        relationship,
+                "detailed_questions":  detailed_questions,
+                "detailed_answers":    detailed_answers,
+                "result":              full_text,
+                "compatibility_result": "",
+                "chat_messages":       [],
+                "file_id":             fid,
+            })
+
+            yield sse_bytes({"done": True, "file_id": fid, "fortune_data": fortune_data, "history_id": hist_id})
 
         except Exception as e:
             yield sse_bytes({"error": safe_str(e)})
@@ -661,6 +704,184 @@ def bulk_coconala_fortune():
         stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---- チャット（追加質問） ----
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    body    = request.get_json(force=True, silent=True) or {}
+    ctx     = body.get("fortune_context") or {}
+    messages= body.get("messages") or []
+
+    concern  = str(ctx.get("concern") or "")
+    reading  = str(ctx.get("reading") or "")
+    today    = datetime.date.today()
+    today_str = f"{today.year}年{today.month}月{today.day}日"
+
+    system = (
+        FORTUNE_SYSTEM_PROMPT
+        + f"\n\n今日の日付: {today_str}\n\n"
+        + "先ほど以下の鑑定を行いました。この内容をふまえて、お客様の追加質問に丁寧に答えてください。\n\n"
+        + f"【相談内容】\n{concern}\n\n【鑑定結果】\n{reading}"
+    )
+
+    def generate():
+        try:
+            yield sse_bytes({"status": "connecting"})
+            with get_client().messages.stream(
+                model="claude-opus-4-6",
+                max_tokens=4096,
+                system=system,
+                messages=messages,
+            ) as stream:
+                for chunk in stream.text_stream:
+                    yield sse_bytes({"chunk": chunk})
+            yield sse_bytes({"done": True})
+        except Exception as e:
+            yield sse_bytes({"error": safe_str(e)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---- 全履歴管理 ----
+
+@app.route("/history")
+def history_page():
+    return render_template("history.html")
+
+
+@app.route("/api/history")
+def get_history_api():
+    history = load_history_data()
+    name_q = (request.args.get("name") or "").strip().lower()
+    date_q = (request.args.get("date") or "").strip()
+
+    filtered = history
+    if name_q:
+        filtered = [h for h in filtered if name_q in (h.get("name") or "").lower()]
+    if date_q:
+        filtered = [h for h in filtered if (h.get("timestamp") or "").startswith(date_q)]
+
+    filtered = list(reversed(filtered))
+
+    # 一覧では result（長文）を除外して軽量化
+    result = []
+    for h in filtered:
+        row = {k: v for k, v in h.items() if k not in ("result", "compatibility_result")}
+        row["has_detail"] = bool(h.get("detailed_questions"))
+        row["has_result"] = bool(h.get("result"))
+        result.append(row)
+
+    return Response(response=_safe_dumps(result), content_type="application/json; charset=utf-8")
+
+
+@app.route("/api/history/<int:history_id>")
+def get_history_entry(history_id):
+    history = load_history_data()
+    entry = next((h for h in history if h.get("id") == history_id), None)
+    if not entry:
+        return json_resp({"error": "not_found"}, 404)
+    return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+
+
+@app.route("/api/history/export/csv")
+def export_history_csv():
+    import csv
+    import io
+
+    history = load_history_data()
+    max_q = max((len(h.get("detailed_questions") or []) for h in history), default=0)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    headers = ["ID", "日時", "名前", "生年月日", "相談内容", "相手の生年月日", "関係性"]
+    for i in range(max_q):
+        headers += [f"質問{i + 1}", f"回答{i + 1}"]
+    headers += ["鑑定結果", "相性診断結果"]
+    writer.writerow(headers)
+
+    for h in history:
+        qs  = h.get("detailed_questions") or []
+        ans = h.get("detailed_answers") or []
+        row = [
+            h.get("id", ""),
+            (h.get("timestamp") or "")[:16].replace("T", " "),
+            h.get("name", ""),
+            h.get("birthdate", ""),
+            h.get("consultation", ""),
+            h.get("partner_birthdate", ""),
+            h.get("relationship", ""),
+        ]
+        for i in range(max_q):
+            row.append(qs[i] if i < len(qs) else "")
+            row.append(ans[i] if i < len(ans) else "")
+        row += [h.get("result", ""), h.get("compatibility_result", "")]
+        writer.writerow(row)
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    return Response(
+        response=csv_bytes,
+        content_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename=fortune_history.csv"},
+    )
+
+
+@app.route("/api/history/<int:history_id>/chat", methods=["PATCH"])
+def update_history_chat(history_id):
+    body          = request.get_json(force=True, silent=True) or {}
+    chat_messages = body.get("chat_messages") or []
+
+    history = load_history_data()
+    for h in history:
+        if h.get("id") == history_id:
+            h["chat_messages"] = chat_messages
+            HISTORY_FILE.write_bytes(
+                json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
+            )
+            return json_resp({"success": True})
+    return json_resp({"error": "not_found"}, 404)
+
+
+@app.route("/api/history/<int:history_id>/download")
+def download_history_entry(history_id):
+    import io as _io
+    history = load_history_data()
+    entry = next((h for h in history if h.get("id") == history_id), None)
+    if not entry:
+        return json_resp({"error": "not_found"}, 404)
+
+    qs  = entry.get("detailed_questions") or []
+    ans = entry.get("detailed_answers") or []
+
+    lines = [
+        "=" * 50,
+        "Fortune Reading",
+        "=" * 50,
+        "Date: " + (entry.get("timestamp") or "")[:16].replace("T", " "),
+        "Name: " + entry.get("name", ""),
+        "Birthdate: " + entry.get("birthdate", ""),
+        "Consultation: " + entry.get("consultation", ""),
+    ]
+    if qs:
+        lines += ["", "[Detailed Q&A]"]
+        for i, q in enumerate(qs):
+            lines.append(f"Q{i + 1}: {q}")
+            lines.append(f"A{i + 1}: {ans[i] if i < len(ans) else ''}")
+    lines += ["", "[Reading]", entry.get("result", ""), "", "=" * 50]
+
+    content = "\n".join(lines).encode("utf-8")
+    return send_file(
+        _io.BytesIO(content),
+        as_attachment=True,
+        download_name=f"fortune_{entry.get('birthdate', 'unknown')}.txt",
+        mimetype="text/plain; charset=utf-8",
     )
 
 

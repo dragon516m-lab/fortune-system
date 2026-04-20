@@ -1,0 +1,244 @@
+/* ===== 履歴ページ専用スタイル ===== */
+
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.nav-link:hover { background: rgba(255,255,255,0.08); }
+
+/* ===== 検索バー ===== */
+.search-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.search-bar input[type="text"] { flex: 1; min-width: 160px; }
+.search-bar input[type="date"] { width: 160px; }
+.csv-btn {
+  margin-left: auto;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.stats-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ===== 履歴リスト ===== */
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.history-row:last-child { border-bottom: none; }
+.history-row:hover { background: rgba(124,77,255,0.08); }
+
+.history-row-id {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+.history-row-body { flex: 1; min-width: 0; }
+.history-row-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.history-row-concern {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-row-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.badge-detail {
+  font-size: 0.7rem;
+  background: rgba(124,77,255,0.25);
+  color: var(--primary-light);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.history-row-arrow {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.anon { color: var(--text-muted); font-style: italic; }
+
+/* ===== モーダル ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+.modal-content {
+  background: var(--dark-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 720px;
+  padding: 32px;
+  position: relative;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+}
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.modal-close:hover { background: rgba(255,255,255,0.15); }
+
+.modal-header { margin-bottom: 24px; }
+.modal-id {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.modal-name {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--primary-light);
+  margin-bottom: 6px;
+}
+.modal-meta {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.modal-section {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.modal-section:last-of-type { border-bottom: none; }
+.modal-section-title {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.modal-text {
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--text);
+}
+
+/* Q&A */
+.qa-item {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(124,77,255,0.15);
+  border-radius: 8px;
+}
+.qa-question {
+  font-size: 0.88rem;
+  color: var(--primary-light);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.qa-answer {
+  font-size: 0.88rem;
+  color: var(--text);
+}
+.qa-answer-empty { color: var(--text-muted); font-style: italic; }
+
+/* 鑑定結果表示 */
+.modal-reading {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 20px;
+  font-size: 0.9rem;
+  line-height: 1.9;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.modal-reading .reading-heading {
+  font-weight: 700;
+  color: var(--primary-light);
+  margin: 0.8em 0 0.2em;
+}
+.modal-reading .reading-line { margin: 0; line-height: 1.9; }
+
+/* チャット履歴 */
+.modal-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-chat-bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  max-width: 88%;
+}
+.modal-chat-bubble.user {
+  align-self: flex-end;
+  background: rgba(124,77,255,0.2);
+  border: 1px solid rgba(124,77,255,0.3);
+}
+.modal-chat-bubble.assistant {
+  align-self: flex-start;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.modal-chat-role {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.modal-chat-text {
+  font-size: 0.88rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+/* アクションボタン */
+.modal-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}

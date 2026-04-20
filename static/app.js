@@ -3,6 +3,7 @@
 let currentFileId = null;
 let currentReadingText = "";
 let currentFortuneData = null;
+let currentHistoryId = null;
 
 // ===== 初期化 =====
 document.addEventListener("DOMContentLoaded", () => {
@@ -17,6 +18,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("threads-btn").addEventListener("click", handleThreadsPost);
   document.getElementById("detail-option-cb").addEventListener("change", handleDetailOptionChange);
   document.getElementById("generate-questions-btn").addEventListener("click", generateFollowUpQuestions);
+  document.getElementById("chat-open-btn").addEventListener("click", openChat);
+  document.getElementById("chat-send-btn").addEventListener("click", sendChatMessage);
+  document.getElementById("chat-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChatMessage(); }
+  });
 
   // 生年月日の最大値を今日に設定
   document.getElementById("birthdate").max = new Date().toISOString().split("T")[0];
@@ -58,10 +64,20 @@ async function handleSubmit(e) {
 
   try {
     const detailContext = getFollowUpContext();
+    const { questions: dQuestions, answers: dAnswers } = getFollowUpArrays();
     const response = await fetch("/api/fortune", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, birthdate, concern, detail_context: detailContext || "" }),
+      body: JSON.stringify({
+        name,
+        birthdate,
+        concern,
+        detail_context:     detailContext || "",
+        detailed_questions: dQuestions,
+        detailed_answers:   dAnswers,
+        partner_birthdate:  "",
+        relationship:       "",
+      }),
     });
 
     if (!response.ok) {
@@ -109,6 +125,7 @@ async function handleSubmit(e) {
           readingText.innerHTML = formatReading(currentReadingText);
           currentFileId = payload.file_id;
           currentFortuneData = payload.fortune_data;
+          currentHistoryId = payload.history_id || null;
 
           if (!statsShown) {
             renderFortuneStats(payload.fortune_data);
@@ -324,6 +341,108 @@ async function handleRetry() {
   }
 }
 
+// ===== チャット（追加質問） =====
+
+let chatMessages = [];
+
+async function saveChatToHistory() {
+  if (!currentHistoryId) return;
+  try {
+    await fetch(`/api/history/${currentHistoryId}/chat`, {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ chat_messages: chatMessages }),
+    });
+  } catch (_) {}
+}
+
+function openChat() {
+  const section = document.getElementById("chat-section");
+  section.classList.remove("hidden");
+  section.scrollIntoView({ behavior: "smooth" });
+  document.getElementById("chat-input").focus();
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const text  = input.value.trim();
+  if (!text || !currentReadingText) return;
+
+  const sendBtn = document.getElementById("chat-send-btn");
+  sendBtn.disabled = true;
+  input.value = "";
+
+  // ユーザーのバブルを追加
+  chatMessages.push({ role: "user", content: text });
+  appendChatBubble("user", text);
+
+  // AIの空バブルを追加（ストリーミング用）
+  const aiBubble = appendChatBubble("assistant", "");
+
+  try {
+    const concern = document.getElementById("concern").value.trim();
+    const response = await fetch("/api/chat", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fortune_context: { concern, reading: currentReadingText },
+        messages: chatMessages,
+      }),
+    });
+
+    const reader  = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer    = "";
+    let aiText    = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = JSON.parse(line.slice(6));
+        if (payload.chunk) {
+          aiText += payload.chunk;
+          aiBubble.innerHTML = formatReading(aiText) + '<span class="cursor"></span>';
+          aiBubble.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+        if (payload.done) {
+          aiBubble.innerHTML = formatReading(aiText);
+          chatMessages.push({ role: "assistant", content: aiText });
+          saveChatToHistory();
+        }
+        if (payload.error) {
+          aiBubble.textContent = "エラーが発生しました";
+        }
+      }
+    }
+  } catch (err) {
+    aiBubble.textContent = "エラーが発生しました";
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+function appendChatBubble(role, text) {
+  const messages = document.getElementById("chat-messages");
+  const wrap     = document.createElement("div");
+  wrap.className = `chat-bubble-wrap ${role}`;
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble";
+  bubble.innerHTML = text ? formatReading(text) : "";
+
+  wrap.appendChild(bubble);
+  messages.appendChild(wrap);
+  bubble.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  return bubble;
+}
+
 // ===== 詳細鑑定オプション =====
 
 function handleDetailOptionChange(e) {
@@ -380,22 +499,25 @@ async function generateFollowUpQuestions() {
 }
 
 function renderFollowUpQuestions(questions) {
+  const nums = ["①", "②", "③", "④", "⑤"];
   const container = document.getElementById("questions-container");
   container.innerHTML = `
     ${questions.map((q, i) => `
       <div class="question-item">
-        <p class="question-label">Q${i + 1}.</p>
-        <p class="question-text" contenteditable="true" data-qi="${i}">${esc(q)}</p>
-        <textarea
-          class="question-answer"
-          data-qi="${i}"
-          rows="2"
-          placeholder="（任意）こちらに回答を入力してください..."
-        ></textarea>
+        <p class="question-text">${nums[i] || `Q${i + 1}`} ${esc(q)}</p>
+        <div class="answer-row">
+          <span class="answer-label">A${i + 1}、</span>
+          <textarea
+            class="question-answer"
+            data-qi="${i}"
+            rows="2"
+            placeholder="こちらに回答を入力..."
+          ></textarea>
+        </div>
       </div>
     `).join("")}
     <button type="button" class="btn-secondary" onclick="copyFollowUpQA()" style="margin-top:12px;width:100%;padding:10px;font-size:0.875rem">
-      📋 Q&amp;Aを一括コピー
+      📋 質問文をコピー
     </button>
   `;
 }
@@ -403,22 +525,40 @@ function renderFollowUpQuestions(questions) {
 async function copyFollowUpQA() {
   const container = document.getElementById("questions-container");
   const items     = container.querySelectorAll(".question-item");
-  const concern   = document.getElementById("concern").value.trim();
+  const name      = document.getElementById("name").value.trim();
+  const nums      = ["①", "②", "③", "④", "⑤"];
 
-  let text = `【基本情報】\n相談内容: ${concern}\n\n【詳細情報】\n`;
+  const header = `${name ? name + "さん" : "お客様"}、ご購入いただきありがとうございます✨\nしっかりと診断させていただきますね\n\nまた、より深い鑑定のための質問です。\n以下の質問に、お答え出来る範囲でいいのでお答えいただけると、鑑定結果もより具体的にお返事できるかと思います☺️`;
+
+  const qaLines = [];
   items.forEach((item, i) => {
     const q = item.querySelector(".question-text")?.textContent.trim() || "";
-    const a = item.querySelector(".question-answer")?.value.trim() || "";
-    text += `Q${i + 1}: ${q}\nA: ${a || "（未回答）"}\n\n`;
+    qaLines.push(`\n${q}\nA${i + 1}、`);
   });
-  text = text.trimEnd();
+
+  const text = header + "\n" + qaLines.join("\n");
 
   try {
     await navigator.clipboard.writeText(text);
-    showToast("Q&Aをコピーしました ✓");
+    showToast("質問文をコピーしました ✓");
   } catch {
     showToast("コピーに失敗しました");
   }
+}
+
+function getFollowUpArrays() {
+  const cb        = document.getElementById("detail-option-cb");
+  const container = document.getElementById("questions-container");
+  if (!cb.checked || container.classList.contains("hidden") || !container.innerHTML) {
+    return { questions: [], answers: [] };
+  }
+  const questions = [];
+  const answers   = [];
+  container.querySelectorAll(".question-item").forEach(item => {
+    questions.push(item.querySelector(".question-text")?.textContent.trim() || "");
+    answers.push(item.querySelector(".question-answer")?.value.trim() || "");
+  });
+  return { questions, answers };
 }
 
 function getFollowUpContext() {
@@ -456,11 +596,15 @@ function getFollowUpContext() {
 function resetForm() {
   document.getElementById("result-section").classList.add("hidden");
   document.getElementById("retry-area").classList.add("hidden");
+  document.getElementById("chat-section").classList.add("hidden");
+  document.getElementById("chat-messages").innerHTML = "";
   document.getElementById("fortune-form").reset();
   document.getElementById("input-section").scrollIntoView({ behavior: "smooth" });
-  currentFileId = null;
+  currentFileId      = null;
   currentReadingText = "";
   currentFortuneData = null;
+  currentHistoryId   = null;
+  chatMessages       = [];
 }
 
 // ===== 履歴の読み込み =====

@@ -10,7 +10,8 @@
   <div class="stars-bg"></div>
 
   <header style="position:relative">
-    <div style="position:absolute;top:16px;right:20px">
+    <div style="position:absolute;top:16px;right:20px;display:flex;gap:8px">
+      <a href="/history" style="color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">📚 全履歴</a>
       <a href="/coconala-orders" style="color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">📋 受注管理</a>
     </div>
     <h1>✨ 天命鑑定 ✨</h1>
@@ -90,6 +91,16 @@
 
       <div id="reading-text" class="reading-text"></div>
 
+      <!-- チャット -->
+      <div id="chat-section" class="hidden">
+        <div class="chat-divider"><span>💬 追加質問</span></div>
+        <div id="chat-messages"></div>
+        <div class="chat-input-area">
+          <textarea id="chat-input" rows="2" placeholder="鑑定についての質問を入力..."></textarea>
+          <button id="chat-send-btn" class="btn-primary" style="width:auto;padding:12px 20px;flex-shrink:0">送信</button>
+        </div>
+      </div>
+
       <div id="action-buttons" class="action-buttons hidden">
         <button id="image-btn" class="btn-primary" style="width:auto;padding:12px 24px">
           🖼️ 画像として保存
@@ -102,6 +113,9 @@
         </button>
         <button id="threads-btn" class="btn-secondary" style="background:rgba(0,0,0,0.3);border-color:rgba(255,255,255,0.3)">
           🧵 Threadsに投稿
+        </button>
+        <button id="chat-open-btn" class="btn-secondary">
+          💬 追加質問する
         </button>
         <button id="new-reading-btn" class="btn-outline">
           🔮 新しい鑑定をする

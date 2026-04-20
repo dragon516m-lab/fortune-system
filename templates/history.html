@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📚 鑑定履歴 | 天命鑑定</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/history.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <header style="position:relative">
+    <div style="position:absolute;top:16px;left:20px">
+      <a href="/" class="nav-link">← メインページ</a>
+    </div>
+    <div style="position:absolute;top:16px;right:20px">
+      <a href="/coconala-orders" class="nav-link">📋 受注管理</a>
+    </div>
+    <h1>📚 鑑定履歴</h1>
+    <p>過去の鑑定記録を検索・管理</p>
+  </header>
+
+  <main>
+    <!-- 検索・フィルタ -->
+    <section class="card">
+      <div class="search-bar">
+        <input type="text" id="search-name" placeholder="名前で検索...">
+        <input type="date" id="search-date">
+        <button onclick="searchHistory()" class="btn-secondary">🔍 検索</button>
+        <button onclick="clearSearch()" class="btn-outline">クリア</button>
+        <a href="/api/history/export/csv" class="btn-secondary csv-btn" download>📊 CSV出力</a>
+      </div>
+      <p id="stats-text" class="stats-text">読み込み中...</p>
+    </section>
+
+    <!-- 履歴リスト -->
+    <section class="card" style="padding:0;overflow:hidden">
+      <div id="history-list">
+        <div class="loading" style="padding:40px">
+          <div class="spinner"></div>
+          <p>読み込み中...</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 詳細モーダル -->
+  <div id="detail-modal" class="modal-overlay hidden" onclick="handleOverlayClick(event)">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <footer>
+    <p>四柱推命 × 数秘術 × 動物占い　統合鑑定システム</p>
+  </footer>
+
+  <script src="/static/history.js"></script>
+</body>
+</html>
