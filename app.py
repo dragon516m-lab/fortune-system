@@ -101,14 +101,17 @@ def append_history_entry(entry: dict) -> int:
         except Exception:
             pass
     # JSONファイルへフォールバック
-    history = load_history_data()
-    next_id = (history[-1]["id"] + 1) if history else 1
-    entry["id"] = next_id
-    history.append(entry)
-    HISTORY_FILE.write_bytes(
-        json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
-    )
-    return next_id
+    try:
+        history = load_history_data()
+        next_id = (history[-1]["id"] + 1) if history else 1
+        entry["id"] = next_id
+        history.append(entry)
+        HISTORY_FILE.write_bytes(
+            json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
+        )
+        return next_id
+    except Exception:
+        return 0
 
 
 FORTUNE_SYSTEM_PROMPT = (
@@ -425,6 +428,21 @@ def debug_supabase():
         except Exception as e:
             info["query_ok"] = False
             info["query_error"] = safe_str(e)
+        try:
+            test_row = {"timestamp": "2000-01-01T00:00:00", "name": "__test__", "birthdate": "2000-01-01",
+                        "consultation": "test", "result": "test", "compatibility_result": "",
+                        "chat_messages": [], "file_id": "test", "partner_birthdate": "",
+                        "relationship": "", "detailed_questions": [], "detailed_answers": []}
+            res2 = sb.table("history").insert(test_row).execute()
+            if res2.data:
+                sb.table("history").delete().eq("name", "__test__").execute()
+                info["insert_ok"] = True
+            else:
+                info["insert_ok"] = False
+                info["insert_response"] = str(res2)
+        except Exception as e:
+            info["insert_ok"] = False
+            info["insert_error"] = safe_str(e)
     return json_resp(info)
 
 
