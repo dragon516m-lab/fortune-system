@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🚀 note 自動投稿管理</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/auto_post.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <header style="position:relative">
+    <div class="ap-header-nav">
+      <a href="/" class="ap-nav-link">← 占い鑑定</a>
+      <a href="/coconala-orders" class="ap-nav-link">📋 受注管理</a>
+    </div>
+    <h1>🚀 note 自動投稿管理</h1>
+    <p>毎日1回 自動でnoteに記事を投稿して集客を自動化</p>
+  </header>
+
+  <main>
+
+    <!-- ===== 設定カード ===== -->
+    <section class="card">
+      <div class="ap-card-header">
+        <h2>⚙️ 設定</h2>
+        <div class="ap-status-pill" id="scheduler-status">⏸ 停止中</div>
+      </div>
+
+      <!-- 認証情報ステータス -->
+      <div id="credentials-status" class="ap-info-box"></div>
+
+      <div class="ap-settings-grid">
+        <!-- 自動投稿 ON/OFF -->
+        <div class="ap-setting-row ap-full">
+          <label class="ap-toggle-label">
+            <span>自動投稿を有効にする</span>
+            <div class="ap-toggle-wrap">
+              <input type="checkbox" id="enabled-toggle" class="ap-toggle-input">
+              <span class="ap-toggle-slider"></span>
+            </div>
+          </label>
+        </div>
+
+        <!-- 投稿時刻 -->
+        <div class="form-group">
+          <label>投稿時刻（毎日）</label>
+          <input type="time" id="post-time" value="09:00">
+        </div>
+
+        <!-- noteステータス -->
+        <div class="form-group">
+          <label>投稿ステータス</label>
+          <select id="note-status" class="ap-select">
+            <option value="draft">下書き保存</option>
+            <option value="public">公開</option>
+          </select>
+        </div>
+
+        <!-- ococoナラURL -->
+        <div class="form-group ap-full">
+          <label>ococoナラ サービスURL</label>
+          <input type="url" id="coconala-url" placeholder="https://coconala.com/services/XXXXX">
+        </div>
+
+        <!-- note URL -->
+        <div class="form-group ap-full">
+          <label>あなたのnoteページURL（確認用）</label>
+          <input type="url" id="note-url" placeholder="https://note.com/your_username">
+        </div>
+
+        <!-- コンテンツ選択 -->
+        <div class="ap-full">
+          <label style="font-size:0.9rem;color:var(--text-muted);display:block;margin-bottom:10px">投稿するコンテンツ</label>
+          <div class="ap-checkbox-row">
+            <label class="ap-checkbox-label">
+              <input type="checkbox" id="content-today" checked>
+              <span>🔮 今日の運勢（12星座別おみくじ）</span>
+            </label>
+            <label class="ap-checkbox-label">
+              <input type="checkbox" id="content-voice" checked>
+              <span>💬 お客様の声（テンプレート生成）</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- env ヒント -->
+      <div class="ap-env-hint">
+        <p>🔑 note.com ログイン情報は <code>.env</code> に設定してください：</p>
+        <pre>NOTE_EMAIL=your@email.com
+NOTE_PASSWORD=yourpassword</pre>
+      </div>
+
+      <div class="action-buttons" style="margin-top:20px">
+        <button id="save-config-btn" class="btn-primary" style="width:auto;padding:12px 28px">
+          💾 設定を保存
+        </button>
+        <button id="run-now-btn" class="btn-secondary">
+          ▶ 今すぐ実行
+        </button>
+        <a id="note-url-link" href="#" target="_blank" class="btn-outline" style="display:none;padding:10px 20px;text-decoration:none">
+          🔗 noteを開く
+        </a>
+      </div>
+
+      <div id="run-status" class="ap-run-status hidden"></div>
+    </section>
+
+    <!-- ===== コンテンツ生成プレビュー ===== -->
+    <section class="card">
+      <h2>✍️ コンテンツ生成・プレビュー</h2>
+      <p class="ap-desc">生成してからnoteに投稿、または自動投稿を待つことができます。</p>
+
+      <div class="ap-gen-tabs">
+        <button class="ap-gen-tab active" data-type="daily_fortune">🔮 今日の運勢</button>
+        <button class="ap-gen-tab" data-type="customer_voice">💬 お客様の声</button>
+      </div>
+
+      <button id="generate-btn" class="btn-primary" style="margin-bottom:16px">
+        ✨ 生成する
+      </button>
+
+      <div id="gen-loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>記事を生成中...</p>
+      </div>
+
+      <div id="gen-preview" class="hidden">
+        <div class="ap-preview-header">
+          <div id="preview-title" class="ap-preview-title"></div>
+          <button id="copy-preview-btn" class="cn-btn-sm cn-btn-view">📋 コピー</button>
+        </div>
+        <div id="preview-body" class="ap-preview-body"></div>
+        <div class="action-buttons" style="margin-top:12px">
+          <button id="post-preview-btn" class="btn-primary" style="width:auto;padding:10px 24px">
+            📤 noteに投稿
+          </button>
+          <button id="regen-btn" class="btn-outline">🔄 再生成</button>
+        </div>
+        <div id="post-result" class="ap-run-status hidden" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <!-- ===== 投稿履歴 ===== -->
+    <section class="card">
+      <h2>📚 投稿履歴</h2>
+      <div id="history-list">
+        <p class="empty-message">まだ投稿履歴はありません</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>note 自動投稿 ✕ 天命鑑定システム</p>
+  </footer>
+
+  <script src="/static/auto_post.js"></script>
+</body>
+</html>

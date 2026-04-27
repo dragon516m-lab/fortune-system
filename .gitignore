@@ -4,3 +4,9 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+.claude/
+orders/*.json
+auto_post/*.json
+auto_post/drafts/*
+!auto_post/drafts/.gitkeep
+data/

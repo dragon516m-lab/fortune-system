@@ -384,8 +384,11 @@ async function sendChatMessage() {
   // AIの空バブルを追加（ストリーミング用）
   const aiBubble = appendChatBubble("assistant", "");
 
+  let aiText      = "";
+  let receivedDone = false;
+
   try {
-    const concern = document.getElementById("concern").value.trim();
+    const concern  = document.getElementById("concern")?.value?.trim() || "";
     const response = await fetch("/api/chat", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -395,39 +398,99 @@ async function sendChatMessage() {
       }),
     });
 
+    // HTTPエラー（400/500等）はSSEではないため別途処理
+    if (!response.ok) {
+      let errMsg = `通信エラー (${response.status})`;
+      try {
+        const errBody = await response.json();
+        if (errBody.error) errMsg = `エラー: ${errBody.error}`;
+      } catch (_) {}
+      aiBubble.innerHTML = `<span style="color:var(--secondary)">${errMsg}</span>`;
+      // ユーザーメッセージをchatMessagesから取り消す（再質問できるように）
+      chatMessages.pop();
+      return;
+    }
+
     const reader  = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer    = "";
-    let aiText    = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop();
 
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
-        const payload = JSON.parse(line.slice(6));
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(6));
+        } catch (_) {
+          continue; // 不正なJSONは無視
+        }
+
         if (payload.chunk) {
           aiText += payload.chunk;
           aiBubble.innerHTML = formatReading(aiText) + '<span class="cursor"></span>';
           aiBubble.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
+
         if (payload.done) {
+          receivedDone = true;
           aiBubble.innerHTML = formatReading(aiText);
           chatMessages.push({ role: "assistant", content: aiText });
           saveChatToHistory();
+          break; // doneを受け取ったらforループを抜ける
         }
+
         if (payload.error) {
-          aiBubble.textContent = "エラーが発生しました";
+          // エラーメッセージは元のテキストを残しつつ下に表示
+          if (aiText) {
+            aiBubble.innerHTML =
+              formatReading(aiText) +
+              `<p style="color:var(--secondary);font-size:0.85rem;margin-top:8px">⚠️ 途中でエラーが発生しました</p>`;
+          } else {
+            aiBubble.innerHTML = `<span style="color:var(--secondary)">⚠️ エラー: ${esc(payload.error)}</span>`;
+          }
+          receivedDone = true; // エラーも完了扱いにしてロールバックしない
+          break;
         }
       }
+
+      if (receivedDone) break; // whileループも抜ける
     }
+
   } catch (err) {
-    aiBubble.textContent = "エラーが発生しました";
+    if (aiText) {
+      // 途中まで取得できたテキストは残す
+      aiBubble.innerHTML =
+        formatReading(aiText) +
+        `<p style="color:var(--secondary);font-size:0.85rem;margin-top:8px">⚠️ 接続が切断されました</p>`;
+    } else {
+      aiBubble.innerHTML = `<span style="color:var(--secondary)">⚠️ 接続エラーが発生しました</span>`;
+      chatMessages.pop(); // ユーザーメッセージを取り消す
+    }
   } finally {
+    // doneなしでストリームが終了した場合の後処理
+    // （カーソルを消し、取得済みテキストをchatMessagesに保存）
+    if (!receivedDone && aiText) {
+      aiBubble.innerHTML = formatReading(aiText); // カーソル除去
+      // アシスタントの応答をchatMessagesに追加（次の質問で[user,user]になるのを防ぐ）
+      if (chatMessages.length === 0 || chatMessages[chatMessages.length - 1].role !== "assistant") {
+        chatMessages.push({ role: "assistant", content: aiText });
+        saveChatToHistory();
+      }
+    } else if (!receivedDone && !aiText) {
+      // 何も取得できなかった場合はユーザーメッセージも取り消す
+      if (chatMessages.length > 0 && chatMessages[chatMessages.length - 1].role === "user") {
+        chatMessages.pop();
+        aiBubble.innerHTML = `<span style="color:var(--secondary)">⚠️ 応答を受信できませんでした。もう一度お試しください。</span>`;
+      }
+    }
+
     sendBtn.disabled = false;
     input.focus();
   }

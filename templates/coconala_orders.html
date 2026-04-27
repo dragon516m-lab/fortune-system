@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📋 ココナラ受注管理</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/coconala.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <header>
+    <div class="cn-header-nav">
+      <a href="/" class="cn-nav-back">← 占い鑑定</a>
+      <a href="/auto-post" class="cn-nav-back" style="margin-left:6px">🚀 note自動投稿</a>
+    </div>
+    <h1>📋 ococoナラ受注管理</h1>
+    <p>受注・鑑定・納品をワンストップで管理</p>
+  </header>
+
+  <main>
+    <!-- タブ -->
+    <div class="cn-tab-bar">
+      <button class="cn-tab-btn active" data-tab="orders">📋 受注一覧</button>
+      <button class="cn-tab-btn" data-tab="register">➕ 受注登録</button>
+    </div>
+
+    <!-- ===== 受注一覧タブ ===== -->
+    <section id="tab-orders" class="cn-tab-content card">
+      <div class="cn-toolbar">
+        <div class="cn-status-filter">
+          <button class="cn-filter-btn active" data-status="all">全て</button>
+          <button class="cn-filter-btn" data-status="未対応">未対応</button>
+          <button class="cn-filter-btn" data-status="鑑定中">鑑定中</button>
+          <button class="cn-filter-btn" data-status="完了">完了</button>
+        </div>
+        <button id="bulk-fortune-btn" class="btn-primary" style="width:auto;padding:10px 20px;font-size:0.9rem">
+          ⚡ 一括鑑定
+        </button>
+      </div>
+
+      <!-- 一括進捗バー -->
+      <div id="bulk-progress" class="cn-bulk-progress hidden">
+        <div class="cn-progress-wrap">
+          <div id="progress-bar" class="cn-progress-bar" style="width:0%"></div>
+        </div>
+        <p id="progress-text" class="cn-progress-text">準備中...</p>
+      </div>
+
+      <div id="orders-list">
+        <p class="empty-message">受注はありません</p>
+      </div>
+    </section>
+
+    <!-- ===== 受注登録タブ ===== -->
+    <section id="tab-register" class="cn-tab-content hidden">
+
+      <!-- ペースト解析 -->
+      <div class="card">
+        <h2>📥 テキストから一括登録</h2>
+        <p class="cn-section-desc">ococoナラのトークルームから複数件まとめてコピペして一括登録できます。</p>
+
+        <div class="cn-paste-hint">
+          <p>📌 入力フォーマット（区切りは <code>---</code>）：</p>
+          <pre class="cn-format-example">山田花子
+1985/3/15
+恋愛について相談があります
+
+---
+
+鈴木太郎
+1990年12月25日
+仕事の転機について知りたいです</pre>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-top:8px">
+            ※ ラベル付き形式（名前：〇〇、生年月日：〇〇）にも対応しています。
+          </p>
+        </div>
+
+        <div class="form-group" style="margin-top:16px">
+          <label for="paste-text">テキストを貼り付け</label>
+          <textarea id="paste-text" rows="10" placeholder="ここにテキストを貼り付けてください..."></textarea>
+        </div>
+        <button id="parse-btn" class="btn-secondary" style="width:100%">🔍 解析する</button>
+
+        <div id="parse-result" class="hidden" style="margin-top:20px">
+          <h3 style="color:var(--primary-light);margin-bottom:12px">解析結果</h3>
+          <div id="parsed-entries"></div>
+          <button id="register-parsed-btn" class="btn-primary" style="margin-top:16px">
+            ✅ まとめて登録する
+          </button>
+        </div>
+      </div>
+
+      <!-- 手動入力 -->
+      <div class="card" style="margin-top:0">
+        <h2>✍️ 手動入力</h2>
+        <div id="manual-entries"></div>
+        <button id="add-entry-btn" class="btn-outline" style="width:100%;margin-bottom:16px">
+          ＋ もう1件追加
+        </button>
+        <button id="register-manual-btn" class="btn-primary">✅ 登録する</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ococoナラ受注管理 ✕ 天命鑑定システム</p>
+  </footer>
+
+  <!-- ===== 鑑定実行モーダル ===== -->
+  <div id="fortune-modal" class="cn-modal hidden">
+    <div class="cn-modal-backdrop"></div>
+    <div class="cn-modal-content">
+      <div class="cn-modal-header">
+        <h2 id="modal-title">🔮 鑑定</h2>
+        <button id="modal-close" class="cn-modal-close">✕</button>
+      </div>
+
+      <div id="modal-info" class="cn-modal-info"></div>
+
+      <div id="modal-loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>天命を読み解いています...</p>
+      </div>
+
+      <div id="modal-reading" class="reading-text" style="min-height:80px"></div>
+
+      <div id="modal-actions" class="action-buttons hidden" style="margin-top:16px">
+        <button id="modal-copy-reading" class="btn-secondary">📋 鑑定文コピー</button>
+        <button id="modal-show-delivery" class="btn-primary" style="width:auto;padding:10px 24px">
+          📤 納品テキスト生成
+        </button>
+        <button id="modal-save-image" class="btn-secondary">🖼️ 画像保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 納品テキストモーダル ===== -->
+  <div id="delivery-modal" class="cn-modal hidden">
+    <div class="cn-modal-backdrop"></div>
+    <div class="cn-modal-content">
+      <div class="cn-modal-header">
+        <h2>📤 納品用テキスト</h2>
+        <button id="delivery-close" class="cn-modal-close">✕</button>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:12px">
+        以下をそのままococoナラのトークルームに貼り付けてください。
+      </p>
+      <div id="delivery-text" class="cn-delivery-text"></div>
+      <div class="action-buttons" style="margin-top:16px">
+        <button id="copy-delivery-btn" class="btn-primary" style="width:auto;padding:10px 24px">
+          📋 コピー
+        </button>
+        <button id="delivery-save-image-btn" class="btn-secondary">🖼️ 画像を保存</button>
+        <button id="delivery-close2" class="btn-outline">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/coconala.js"></script>
+</body>
+</html>

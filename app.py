@@ -5,6 +5,9 @@ import json
 import logging
 import datetime
 import uuid
+import time
+import random
+import threading
 from pathlib import Path
 
 # ---- エンコーディング設定（全importより先に実行） ----
@@ -22,6 +25,7 @@ import anthropic
 import requests as http_requests
 from flask import Flask, render_template, request, Response, send_file, stream_with_context
 from dotenv import load_dotenv
+from pathlib import Path
 
 try:
     from supabase import create_client as _sb_create
@@ -30,7 +34,7 @@ except ImportError:
 
 from fortune.calculator import calculate_all, format_for_prompt
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
 app = Flask(__name__)
 app.logger.disabled = True
@@ -135,7 +139,8 @@ _client = None
 def get_client():
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or None
+        _client = anthropic.Anthropic(api_key=api_key)
     return _client
 
 
@@ -822,27 +827,52 @@ def chat():
     today    = datetime.date.today()
     today_str = f"{today.year}年{today.month}月{today.day}日"
 
+    # システムプロンプトに含める鑑定文は最大3000文字に制限
+    # （全文を入れるとリクエストが巨大になりタイムアウトの原因になるため）
+    reading_excerpt = reading[:3000] + "…（以下省略）" if len(reading) > 3000 else reading
+
     system = (
         FORTUNE_SYSTEM_PROMPT
         + f"\n\n今日の日付: {today_str}\n\n"
-        + "先ほど以下の鑑定を行いました。この内容をふまえて、お客様の追加質問に丁寧に答えてください。\n\n"
-        + f"【相談内容】\n{concern}\n\n【鑑定結果】\n{reading}"
+        + "先ほど以下の鑑定を行いました。この内容をふまえて、お客様の追加質問に丁寧に答えてください。\n"
+        + "追加質問への回答は簡潔にまとめ、必要十分な内容で答えてください。\n\n"
+        + f"【相談内容】\n{concern}\n\n【鑑定結果（抜粋）】\n{reading_excerpt}"
     )
+
+    # messages の整合性チェック：先頭がuserでない・連続するroleがあれば修正
+    valid_messages: list = []
+    for msg in messages:
+        role    = msg.get("role", "")
+        content = str(msg.get("content") or "")
+        if role not in ("user", "assistant"):
+            continue
+        if valid_messages and valid_messages[-1]["role"] == role:
+            # 同じroleが連続している場合は内容をマージ
+            valid_messages[-1]["content"] += "\n" + content
+        else:
+            valid_messages.append({"role": role, "content": content})
+
+    # 最後のメッセージがuserでなければ追加質問として処理できないためエラー
+    if not valid_messages or valid_messages[-1]["role"] != "user":
+        return json_resp({"error": "invalid_message_order"}, 400)
 
     def generate():
         try:
             yield sse_bytes({"status": "connecting"})
             with get_client().messages.stream(
                 model="claude-opus-4-6",
-                max_tokens=4096,
+                max_tokens=8192,           # 4096 → 8192 に拡張（回答が途中で切れる問題を防止）
                 system=system,
-                messages=messages,
+                messages=valid_messages,
             ) as stream:
                 for chunk in stream.text_stream:
                     yield sse_bytes({"chunk": chunk})
             yield sse_bytes({"done": True})
         except Exception as e:
-            yield sse_bytes({"error": safe_str(e)})
+            try:
+                yield sse_bytes({"error": safe_str(e)})
+            except Exception:
+                pass
 
     return Response(
         stream_with_context(generate()),
@@ -993,6 +1023,411 @@ def download_history_entry(history_id):
         download_name=f"fortune_{entry.get('birthdate', 'unknown')}.txt",
         mimetype="text/plain; charset=utf-8",
     )
+
+
+# ======================================================
+# ---- note 自動投稿機能 ----
+# ======================================================
+
+AUTO_POST_DIR         = Path("auto_post")
+AUTO_POST_DIR.mkdir(exist_ok=True)
+(AUTO_POST_DIR / "drafts").mkdir(exist_ok=True)
+AUTO_POST_CONFIG_FILE = AUTO_POST_DIR / "config.json"
+AUTO_POST_HISTORY_FILE = AUTO_POST_DIR / "history.json"
+
+_AP_DEFAULTS = {
+    "enabled":       False,
+    "post_time":     "09:00",
+    "coconala_url":  "",
+    "note_url":      "",
+    "note_status":   "draft",
+    "content_today": True,
+    "content_voice": True,
+    "last_post_date": None,
+}
+
+
+def load_ap_config():
+    if not AUTO_POST_CONFIG_FILE.exists():
+        return dict(_AP_DEFAULTS)
+    try:
+        return {**_AP_DEFAULTS, **json.loads(AUTO_POST_CONFIG_FILE.read_bytes())}
+    except Exception:
+        return dict(_AP_DEFAULTS)
+
+
+def save_ap_config(cfg):
+    AUTO_POST_CONFIG_FILE.write_bytes(
+        json.dumps(cfg, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+
+
+def load_ap_history():
+    if not AUTO_POST_HISTORY_FILE.exists():
+        return []
+    try:
+        return json.loads(AUTO_POST_HISTORY_FILE.read_bytes())
+    except Exception:
+        return []
+
+
+def save_ap_history(h):
+    AUTO_POST_HISTORY_FILE.write_bytes(
+        json.dumps(h, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+
+
+# ---- note.com API ----
+
+def note_login(email: str, password: str) -> str:
+    """note.com にログインしてセッショントークンを返す"""
+    r = http_requests.post(
+        "https://note.com/api/v1/auth/sign_in",
+        json={"login": email, "password": password},
+        headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    data = r.json()
+    token = (
+        data.get("token")
+        or data.get("data", {}).get("token")
+        or data.get("user", {}).get("token")
+    )
+    if not token:
+        raise ValueError(f"トークン取得失敗: {json.dumps(data, ensure_ascii=False)[:200]}")
+    return token
+
+
+def note_create_article(token: str, title: str, body: str, status: str = "draft") -> dict:
+    """note.com に記事を作成する"""
+    r = http_requests.post(
+        "https://note.com/api/v3/notes",
+        headers={
+            "Token": token,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        },
+        json={"kind": "text_note", "status": status, "name": title, "body": body},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+# ---- コンテンツ生成 ----
+
+def _day_numerology(dt: datetime.datetime) -> int:
+    n = sum(int(d) for d in dt.strftime("%Y%m%d"))
+    while n > 9 and n not in (11, 22, 33):
+        n = sum(int(d) for d in str(n))
+    return n
+
+
+def build_daily_fortune_prompt(coconala_url: str) -> str:
+    from fortune.calculator import calculate_all
+    now = datetime.datetime.now()
+    wd  = ["月", "火", "水", "木", "金", "土", "日"][now.weekday()]
+    fd  = calculate_all(now.year, now.month, now.day)
+    day_pillar  = fd["shichusuimei"]["day_pillar"]["pillar"]
+    day_element = fd["shichusuimei"]["day_pillar"].get("element", "")
+    day_num     = _day_numerology(now)
+    date_str    = f"{now.year}年{now.month}月{now.day}日（{wd}）"
+
+    return f"""今日は{date_str}です。
+今日の日柱は「{day_pillar}」（{day_element}）、数秘は{day_num}です。
+
+以下の形式でnote.com向け「12星座別おみくじ運勢」記事を書いてください。
+
+タイトル（1行目）:
+【{now.year}年{now.month}月{now.day}日】今日の12星座おみくじ運勢🔮〜四柱推命×数秘術で読み解く天命〜
+
+本文:
+- 冒頭3〜4行：今日のエネルギー（日柱・数秘をもとに）
+- 各星座の運勢（各2〜3行、ラッキーアドバイス付き）：
+  ⭐ おひつじ座（3/21〜4/19）
+  ♉ おうし座（4/20〜5/20）
+  ♊ ふたご座（5/21〜6/21）
+  ♋ かに座（6/22〜7/22）
+  ♌ しし座（7/23〜8/22）
+  ♍ おとめ座（8/23〜9/22）
+  ♎ てんびん座（9/23〜10/23）
+  ♏ さそり座（10/24〜11/22）
+  ♐ いて座（11/23〜12/21）
+  ♑ やぎ座（12/22〜1/19）
+  ♒ みずがめ座（1/20〜2/18）
+  ♓ うお座（2/19〜3/20）
+- 締め：個人鑑定への誘導
+  「より詳しいあなただけの天命鑑定はこちら → {coconala_url or '（URLを設定してください）'}」
+- 温かく親しみやすい日本語・絵文字適度に使用
+- Markdownの##や**は使わない
+"""
+
+
+def build_customer_voice_prompt(coconala_url: str) -> str:
+    theme = random.choice(["仕事・転職", "恋愛・結婚", "人間関係", "将来・人生の方向性"])
+    return f"""占い師のnote.com向け「お客様の声」記事を日本語で書いてください。
+
+テーマ：{theme}
+・架空のお客様（匿名）の体験談として、リアリティのある内容で
+・800〜1200文字程度
+
+タイトル（1行目）:
+【お客様の声】{theme}でお悩みだった方の鑑定体験談✨
+
+本文の構成：
+1. 冒頭の挨拶（占い師として）
+2. お客様のプロフィール（例：30代女性、具体的だが匿名）
+3. 鑑定前のお悩み（具体的・リアルに）
+4. 鑑定を通じた気づき（四柱推命/数秘術/動物占いの視点）
+5. 鑑定後の変化・感想（前向きな変化を具体的に）
+6. 締め：読者への呼びかけ＋ococoナラURL
+   「あなたも天命鑑定を受けてみませんか → {coconala_url or '（URLを設定してください）'}」
+
+- 温かく共感的な日本語
+- 過度な宣伝感は避けて自然な口コミ風に
+- Markdownの##や**は使わない
+"""
+
+
+def _save_draft_and_history(ctype, title, body, post_status, note_url=""):
+    ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    fid  = f"draft_{ctype}_{ts}"
+    (AUTO_POST_DIR / "drafts" / f"{fid}.json").write_bytes(
+        json.dumps({"id": fid, "type": ctype, "title": title, "body": body,
+                    "created_at": datetime.datetime.now().isoformat()},
+                   ensure_ascii=False, indent=2).encode("utf-8")
+    )
+    hist = load_ap_history()
+    hist.insert(0, {"id": fid, "type": ctype, "title": title, "status": post_status,
+                    "note_url": note_url, "created_at": datetime.datetime.now().isoformat()})
+    save_ap_history(hist[:50])
+    return fid
+
+
+def run_auto_post_now(cfg: dict) -> list:
+    """自動投稿を実行して結果リストを返す"""
+    email        = os.environ.get("NOTE_EMAIL", "")
+    password     = os.environ.get("NOTE_PASSWORD", "")
+    coconala_url = cfg.get("coconala_url", "")
+    note_status  = cfg.get("note_status", "draft")
+
+    # note ログイン
+    token = None
+    login_error = ""
+    if email and password:
+        try:
+            token = note_login(email, password)
+        except Exception as e:
+            login_error = safe_str(e)
+
+    content_types = []
+    if cfg.get("content_today"): content_types.append("daily_fortune")
+    if cfg.get("content_voice"):  content_types.append("customer_voice")
+
+    results = []
+    for ctype in content_types:
+        try:
+            prompt = (build_daily_fortune_prompt(coconala_url)
+                      if ctype == "daily_fortune"
+                      else build_customer_voice_prompt(coconala_url))
+
+            full_text = ""
+            with get_client().messages.stream(
+                model="claude-opus-4-6", max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for chunk in stream.text_stream:
+                    full_text += chunk
+
+            lines   = full_text.strip().split("\n")
+            title   = lines[0].strip() if lines else "無題"
+            body_t  = "\n".join(lines[1:]).strip() if len(lines) > 1 else full_text
+
+            note_url    = ""
+            post_status = "draft_saved"
+
+            if token:
+                try:
+                    res      = note_create_article(token, title, body_t, note_status)
+                    note_url = (res.get("data", {}).get("noteUrl")
+                                or res.get("noteUrl", ""))
+                    post_status = "posted"
+                except Exception as e:
+                    post_status = f"post_failed:{safe_str(e)}"
+            else:
+                post_status = f"no_token:{login_error or 'credentials not set'}"
+
+            fid = _save_draft_and_history(ctype, title, body_t, post_status, note_url)
+            results.append({"type": ctype, "title": title, "status": post_status,
+                             "note_url": note_url, "draft_id": fid})
+
+        except Exception as e:
+            results.append({"type": ctype, "status": f"error:{safe_str(e)}"})
+
+    return results
+
+
+# ---- バックグラウンドスケジューラー ----
+
+_ap_scheduler_started = False
+
+
+def _start_ap_scheduler():
+    global _ap_scheduler_started
+    if _ap_scheduler_started:
+        return
+    _ap_scheduler_started = True
+
+    def loop():
+        while True:
+            try:
+                cfg = load_ap_config()
+                if cfg.get("enabled"):
+                    now  = datetime.datetime.now()
+                    pt   = cfg.get("post_time", "09:00")
+                    ph, pm = map(int, pt.split(":"))
+                    today  = now.strftime("%Y-%m-%d")
+                    if now.hour == ph and now.minute == pm and cfg.get("last_post_date") != today:
+                        run_auto_post_now(cfg)
+                        cfg["last_post_date"] = today
+                        save_ap_config(cfg)
+            except Exception:
+                pass
+            time.sleep(60)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+_start_ap_scheduler()
+
+
+# ---- ルーティング ----
+
+@app.route("/auto-post")
+def auto_post_page():
+    return render_template("auto_post.html")
+
+
+@app.route("/api/auto-post/config", methods=["GET"])
+def ap_get_config():
+    cfg = load_ap_config()
+    cfg["note_email_set"]    = bool(os.environ.get("NOTE_EMAIL"))
+    cfg["note_password_set"] = bool(os.environ.get("NOTE_PASSWORD"))
+    return Response(response=_safe_dumps(cfg), content_type="application/json; charset=utf-8")
+
+
+@app.route("/api/auto-post/config", methods=["POST"])
+def ap_save_config():
+    body = request.get_json(force=True, silent=True) or {}
+    cfg  = load_ap_config()
+    for k in ("enabled", "post_time", "coconala_url", "note_url",
+              "note_status", "content_today", "content_voice"):
+        if k in body:
+            cfg[k] = body[k]
+    save_ap_config(cfg)
+    return json_resp({"success": True})
+
+
+@app.route("/api/auto-post/generate", methods=["POST"])
+def ap_generate():
+    body         = request.get_json(force=True, silent=True) or {}
+    ctype        = str(body.get("type") or "daily_fortune")
+    coconala_url = load_ap_config().get("coconala_url", "")
+
+    prompt = (build_daily_fortune_prompt(coconala_url)
+              if ctype == "daily_fortune"
+              else build_customer_voice_prompt(coconala_url))
+
+    def generate():
+        try:
+            yield sse_bytes({"status": "connecting"})
+            full_text = ""
+            with get_client().messages.stream(
+                model="claude-opus-4-6", max_tokens=4000,
+                messages=[{"role": "user", "content": prompt}],
+            ) as stream:
+                for chunk in stream.text_stream:
+                    full_text += chunk
+                    yield sse_bytes({"chunk": chunk})
+
+            lines  = full_text.strip().split("\n")
+            title  = lines[0].strip() if lines else "無題"
+            body_t = "\n".join(lines[1:]).strip() if len(lines) > 1 else full_text
+            fid    = _save_draft_and_history(ctype, title, body_t, "draft_generated")
+
+            yield sse_bytes({"done": True, "draft_id": fid,
+                             "title": title, "body": body_t})
+        except Exception as e:
+            yield sse_bytes({"error": safe_str(e)})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/auto-post/post-note", methods=["POST"])
+def ap_post_note():
+    body    = request.get_json(force=True, silent=True) or {}
+    title   = str(body.get("title") or "")
+    body_t  = str(body.get("body") or "")
+    ctype   = str(body.get("type") or "daily_fortune")
+
+    if not title or not body_t:
+        return json_resp({"error": "missing_content"}, 400)
+
+    cfg      = load_ap_config()
+    email    = os.environ.get("NOTE_EMAIL", "")
+    password = os.environ.get("NOTE_PASSWORD", "")
+    status   = cfg.get("note_status", "draft")
+
+    if not email or not password:
+        fid = _save_draft_and_history(ctype, title, body_t, "draft_saved_no_credentials")
+        return json_resp({"success": False,
+                          "message": "NOTE_EMAIL / NOTE_PASSWORD が未設定のためローカル保存しました",
+                          "draft_id": fid})
+
+    try:
+        token    = note_login(email, password)
+        res      = note_create_article(token, title, body_t, status)
+        note_url = res.get("data", {}).get("noteUrl") or res.get("noteUrl", "")
+        fid      = _save_draft_and_history(ctype, title, body_t, "posted", note_url)
+        return json_resp({"success": True, "note_url": note_url,
+                          "status": status, "draft_id": fid})
+    except Exception as e:
+        return json_resp({"error": safe_str(e)}, 500)
+
+
+@app.route("/api/auto-post/run-now", methods=["POST"])
+def ap_run_now():
+    cfg = load_ap_config()
+    try:
+        results = run_auto_post_now(cfg)
+        cfg["last_post_date"] = datetime.datetime.now().strftime("%Y-%m-%d")
+        save_ap_config(cfg)
+        return json_resp({"success": True, "results": results})
+    except Exception as e:
+        return json_resp({"error": safe_str(e)}, 500)
+
+
+@app.route("/api/auto-post/history")
+def ap_history():
+    return Response(
+        response=_safe_dumps(load_ap_history()),
+        content_type="application/json; charset=utf-8",
+    )
+
+
+@app.route("/api/auto-post/history/<draft_id>", methods=["DELETE"])
+def ap_delete_history(draft_id):
+    hist = [h for h in load_ap_history() if h.get("id") != draft_id]
+    save_ap_history(hist)
+    draft_path = AUTO_POST_DIR / "drafts" / f"{draft_id}.json"
+    if draft_path.exists():
+        draft_path.unlink()
+    return json_resp({"success": True})
 
 
 if __name__ == "__main__":
