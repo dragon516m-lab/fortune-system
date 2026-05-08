@@ -51,6 +51,13 @@ ORDERS_FILE = ORDERS_DIR / "coconala_orders.json"
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
+LAST_HISTORY_SYNC = {
+    "local_ok": None,
+    "local_error": "",
+    "cloud_ok": None,
+    "cloud_error": "",
+    "cloud_fallback_used": False,
+}
 
 # Supabase（設定があれば使用、なければJSONファイルにフォールバック）
 _supabase = None
@@ -98,6 +105,7 @@ def save_local_history_data(history):
 
 def load_history_data():
     """履歴を取得する。ローカルJSONを正として、Supabase分があれば補完する。"""
+    global LAST_HISTORY_SYNC
     history = []
     for row in load_local_history_data():
         item = dict(row)
@@ -111,6 +119,8 @@ def load_history_data():
     if sb:
         try:
             res = sb.table("history").select("*").order("id").execute()
+            LAST_HISTORY_SYNC["cloud_ok"] = True
+            LAST_HISTORY_SYNC["cloud_error"] = ""
             for row in (res.data or []):
                 key = (row.get("timestamp"), row.get("file_id"))
                 if key not in seen:
@@ -119,27 +129,65 @@ def load_history_data():
                     item["_history_ref"] = f"cloud:{item.get('id')}"
                     history.append(item)
                     seen.add(key)
-        except Exception:
-            pass
+        except Exception as e:
+            LAST_HISTORY_SYNC["cloud_ok"] = False
+            LAST_HISTORY_SYNC["cloud_error"] = safe_str(e)
 
     return history
 
 
 def append_history_entry(entry: dict) -> int:
     """履歴は必ずローカルに残す。Supabaseは同期先として扱う。"""
+    global LAST_HISTORY_SYNC
+    LAST_HISTORY_SYNC.update({
+        "local_ok": None,
+        "local_error": "",
+        "cloud_ok": None,
+        "cloud_error": "",
+        "cloud_fallback_used": False,
+    })
+
     history = load_local_history_data()
     next_id = max((int(h.get("id", 0)) for h in history), default=0) + 1
     entry["id"] = next_id
-    history.append(entry)
-    save_local_history_data(history)
+    try:
+        history.append(entry)
+        save_local_history_data(history)
+        LAST_HISTORY_SYNC["local_ok"] = True
+    except Exception as e:
+        LAST_HISTORY_SYNC["local_ok"] = False
+        LAST_HISTORY_SYNC["local_error"] = safe_str(e)
 
     sb = get_supabase()
     if sb:
         try:
             row = {k: v for k, v in entry.items() if k not in ("id", "fortune_data")}
             sb.table("history").insert(row).execute()
-        except Exception:
-            pass
+            LAST_HISTORY_SYNC["cloud_ok"] = True
+        except Exception as e:
+            first_error = safe_str(e)
+            try:
+                fallback_row = {
+                    "timestamp": entry.get("timestamp", ""),
+                    "name": entry.get("name", ""),
+                    "birthdate": entry.get("birthdate", ""),
+                    "consultation": entry.get("consultation", ""),
+                    "result": entry.get("result", ""),
+                    "compatibility_result": entry.get("compatibility_result", ""),
+                    "file_id": entry.get("file_id", ""),
+                    "partner_birthdate": entry.get("partner_birthdate", ""),
+                    "relationship": entry.get("relationship", ""),
+                }
+                sb.table("history").insert(fallback_row).execute()
+                LAST_HISTORY_SYNC["cloud_ok"] = True
+                LAST_HISTORY_SYNC["cloud_fallback_used"] = True
+                LAST_HISTORY_SYNC["cloud_error"] = first_error
+            except Exception as fallback_error:
+                LAST_HISTORY_SYNC["cloud_ok"] = False
+                LAST_HISTORY_SYNC["cloud_error"] = first_error + " | fallback: " + safe_str(fallback_error)
+    else:
+        LAST_HISTORY_SYNC["cloud_ok"] = False
+        LAST_HISTORY_SYNC["cloud_error"] = "supabase_not_configured_or_client_unavailable"
 
     return next_id
 
@@ -495,6 +543,33 @@ def debug_supabase():
             info["insert_ok"] = False
             info["insert_error"] = safe_str(e)
     return json_resp(info)
+
+
+@app.route("/api/history-debug")
+def history_debug():
+    """本番環境で履歴が残らない時の確認用。秘密値は返さない。"""
+    local_history = load_local_history_data()
+    cloud_count = None
+    cloud_error = ""
+    sb = get_supabase()
+    if sb:
+        try:
+            res = sb.table("history").select("id").execute()
+            cloud_count = len(res.data or [])
+        except Exception as e:
+            cloud_error = safe_str(e)
+
+    return json_resp({
+        "history_file": str(HISTORY_FILE),
+        "local_count": len(local_history),
+        "local_file_exists": HISTORY_FILE.exists(),
+        "supabase_url_set": bool(os.environ.get("SUPABASE_URL", "")),
+        "supabase_key_set": bool(os.environ.get("SUPABASE_ANON_KEY", "")),
+        "supabase_client_created": sb is not None,
+        "cloud_count": cloud_count,
+        "cloud_error": cloud_error,
+        "last_sync": LAST_HISTORY_SYNC,
+    })
 
 
 @app.route("/api/history-list")
