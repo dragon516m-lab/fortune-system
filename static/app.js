@@ -836,21 +836,42 @@ function formatReading(raw) {
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
 
-    // 区切り線 (--- / ***) → 空行として扱う
-    if (/^\s*[-*_]{3,}\s*$/.test(line)) {
-      blankCount++;
+    // 区切り線
+    if (/^\s*[-*_]{3,}\s*$/.test(line) || /^━{4,}$/.test(line.trim())) {
+      if (line.trim().startsWith("━") && htmlParts.length > 0) {
+        htmlParts.push('<div class="reading-divider"></div>');
+      } else {
+        blankCount++;
+      }
       continue;
     }
 
     // 見出し: ## テキスト / 【テキスト】 / ◆ テキスト
     const headingMd  = line.match(/^#{1,3}\s+(.+)$/);
-    const headingJp  = line.match(/^[【◆✦✨🔮🌙🔢🦁📜].*[】]?\s*$/);
+    const headingJp  = line.match(/^[【◆✦✨🔮🌙🔢🦁🐰📜📖🌟💫].*[】]?\s*$/);
     const headingDot = line.match(/^[◆✦★☆]\s*(.+)$/);
 
-    if (headingMd || headingDot) {
+    if (headingJp && line.includes("📖 鑑定結果サマリー")) {
+      if (htmlParts.length > 0) {
+        htmlParts.push('<div class="reading-spacer"></div>');
+      }
+      htmlParts.push('<p class="reading-heading reading-summary-heading">' + esc(line.trim()) + '</p>');
+      blankCount = 0;
+      continue;
+    }
+
+    if (line.trim().startsWith("💡")) {
+      htmlParts.push('<p class="reading-summary-note">' + esc(line.trim()) + '</p>');
+      blankCount = 0;
+      continue;
+    }
+
+    if (headingMd || headingJp || headingDot) {
       const text = headingMd
         ? headingMd[1].trim()
-        : headingDot[1].trim();
+        : headingDot
+          ? headingDot[1].trim()
+          : line.trim();
       // 前に空白を入れる（最初の見出しは除く）
       if (htmlParts.length > 0) {
         htmlParts.push('<div class="reading-spacer"></div>');
