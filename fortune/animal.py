@@ -25,21 +25,6 @@ ANIMAL_BY_NUMBER = {
     56: "黒ひょう", 57: "ライオン", 58: "ライオン", 59: "黒ひょう", 60: "虎",
 }
 
-ANIMAL_BY_DATE_OVERRIDE = {
-    # ユーザー指定の修正確認表。基準値表+最終値表と矛盾する行があるため、
-    # 検収ケースではこちらを優先する。
-    (1990, 3, 15): "コアラ",
-    (1985, 7, 22): "黒ひょう",
-    (1995, 11, 8): "狼",
-    (2000, 1, 1): "チーター",
-    (1978, 9, 30): "黒ひょう",
-    (1992, 5, 5): "たぬき",
-    (1987, 12, 25): "猿",
-    (2003, 4, 18): "ペガサス",
-    (1980, 6, 10): "ひつじ",
-    (1998, 2, 14): "こじか",
-}
-
 BASE_TRAITS = {
     "チーター": {"emoji": "🐆", "traits": "瞬発力・挑戦心・スピード感・勝負強さ"},
     "たぬき": {"emoji": "🦝", "traits": "愛嬌・調整力・経験知・場を和ませる力"},
@@ -70,8 +55,8 @@ def calculate_animal_number(year: int, month: int, day: int) -> int:
     return total
 
 
-def _animal_payload(number: int, role: str, animal_override: str | None = None) -> dict:
-    animal = animal_override or ANIMAL_BY_NUMBER[number]
+def _animal_payload(number: int, role: str) -> dict:
+    animal = ANIMAL_BY_NUMBER[number]
     base = BASE_TRAITS[animal]
     return {
         "role": role,
@@ -93,8 +78,7 @@ def _animal_payload(number: int, role: str, animal_override: str | None = None) 
 def calculate(birth_year: int, birth_month: int, birth_day: int) -> dict:
     """動物占い60分類の計算を行う。"""
     number = calculate_animal_number(birth_year, birth_month, birth_day)
-    override = ANIMAL_BY_DATE_OVERRIDE.get((birth_year, birth_month, birth_day))
-    honmei = _animal_payload(number, "動物占い", override)
+    honmei = _animal_payload(number, "動物占い")
 
     # 既存UIとの互換のため、year_animal/day_animalキーは残す。
     return {
@@ -104,7 +88,6 @@ def calculate(birth_year: int, birth_month: int, birth_day: int) -> dict:
         "getsumei_animal": honmei,
         "base_value": get_base_value(birth_year, birth_month),
         "animal_number": number,
-        "animal_override_applied": bool(override),
         "inner_outer_compatibility": {
             "level": "同一",
             "description": "指定の60分類表に基づく動物占いです",
