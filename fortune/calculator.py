@@ -106,11 +106,11 @@ def format_for_prompt(
     if "animal" in fortune_data:
         ani = fortune_data["animal"]
         data_sections.append(f"""【動物占いデータ】
-・表の顔（年干支）：{ani['year_animal']['emoji']}{ani['year_animal']['animal']}（{ani['year_animal']['pillar']}）
-・資質：{ani['year_animal']['traits']}
+・本命星（表の顔）：{ani['year_animal']['emoji']}{ani['year_animal']['animal']}（{ani['year_animal'].get('title', ani['year_animal']['special_quality'])} / {ani['year_animal'].get('color', '')} / {ani['year_animal'].get('number', '')}番）
+・本命星の資質：{ani['year_animal']['traits']}
 ・干の特徴：{ani['year_animal']['stem_modifier']}
 ・特別な才能：{ani['year_animal']['special_quality']}
-・内なる本質（日干支）：{ani['day_animal']['emoji']}{ani['day_animal']['animal']}
+・月命星（内なる本質）：{ani['day_animal']['emoji']}{ani['day_animal']['animal']}（{ani['day_animal'].get('character', '')}）
 ・内面の資質：{ani['day_animal']['traits']}
 ・表裏の関係：{ani['inner_outer_compatibility']['description']}""")
 

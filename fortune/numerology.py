@@ -40,10 +40,8 @@ def reduce_number(n: int) -> int:
 
 def calculate_life_path(year: int, month: int, day: int) -> int:
     """ライフパスナンバーを計算する"""
-    month_reduced = reduce_number(month)
-    day_reduced = reduce_number(day)
-    year_reduced = reduce_number(sum(int(d) for d in str(year)))
-    total = month_reduced + day_reduced + year_reduced
+    all_digits = f"{year}{month:02d}{day:02d}"
+    total = sum(int(d) for d in all_digits)
     return reduce_number(total)
 
 def calculate_destiny_number(year: int, month: int, day: int) -> int:

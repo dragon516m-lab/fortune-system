@@ -1067,8 +1067,11 @@ def fortune_report(file_id):
         "とら": "🐯", "うさぎ": "🐰", "ぞう": "🐘", "늑대": "🐺",
         "いのしし": "🐗", "ちーた": "🐆", "ぱんだ": "🐼", "わし": "🦅",
         "おおかみ": "🐺", "こくじゃく": "🦚", "たか": "🦅",
+        "黒ひょう": "🐈‍⬛", "チータ": "🐆", "虎": "🐯", "狼": "🐺",
+        "猿": "🐒", "こじか": "🦌", "ゾウ": "🐘", "ひつじ": "🐑",
+        "たぬき": "🦝", "コアラ": "🐨", "ペガサス": "🦄", "ライオン": "🦁",
     }
-    animal_emoji = animal_emoji_map.get(animal_raw.lower(), "🔮")
+    animal_emoji = animal_emoji_map.get(animal_raw, animal_emoji_map.get(animal_raw.lower(), "🔮"))
 
     # 発行日
     ts = data.get("timestamp", "")
