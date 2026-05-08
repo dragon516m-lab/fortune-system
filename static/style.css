@@ -189,7 +189,7 @@ textarea { resize: vertical; }
 /* ===== 命式データグリッド ===== */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -213,6 +213,10 @@ textarea { resize: vertical; }
 .stat-card.animal {
   background: rgba(255,152,0,0.15);
   border-color: rgba(255,152,0,0.4);
+}
+.stat-card.sukuyo {
+  background: rgba(255,215,0,0.12);
+  border-color: rgba(255,215,0,0.38);
 }
 .stat-card h3 {
   font-size: 0.9rem;
@@ -247,6 +251,49 @@ textarea { resize: vertical; }
   line-height: 1;
 }
 .animal-emoji { font-size: 1.8rem; }
+
+.fortune-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.fortune-type-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.92rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fortune-type-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+.compatibility-box {
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  background: rgba(255, 215, 0, 0.06);
+  border: 1px solid rgba(255, 215, 0, 0.22);
+  border-radius: 12px;
+}
+
+#compatibility-fields {
+  margin-top: 16px;
+}
+
+@media (max-width: 520px) {
+  .fortune-type-grid { grid-template-columns: 1fr; }
+}
 
 /* ===== ローディング ===== */
 .loading {

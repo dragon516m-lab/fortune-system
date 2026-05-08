@@ -18,7 +18,7 @@
       </div>
     </div>
     <h1>✨ 天命鑑定 ✨</h1>
-    <p>四柱推命 × 数秘術 × 動物占い　オリジナル統合鑑定</p>
+    <p>四柱推命 × 数秘術 × 動物占い × 宿曜占星術　オリジナル統合鑑定</p>
   </header>
 
   <main>
@@ -38,6 +38,46 @@
           <label for="concern">お悩み・ご相談 <span class="required">*</span></label>
           <textarea id="concern" rows="4" placeholder="例：仕事での人間関係に悩んでいます。今後どのように進めばよいでしょうか..." required></textarea>
         </div>
+
+        <div class="form-group">
+          <label>占術を選択</label>
+          <div class="fortune-type-grid">
+            <label class="fortune-type-option">
+              <input type="checkbox" name="fortune-type" value="shichusuimei" checked>
+              <span>🌙 四柱推命</span>
+            </label>
+            <label class="fortune-type-option">
+              <input type="checkbox" name="fortune-type" value="numerology" checked>
+              <span>🔢 数秘術</span>
+            </label>
+            <label class="fortune-type-option">
+              <input type="checkbox" name="fortune-type" value="animal" checked>
+              <span>🦁 動物占い</span>
+            </label>
+            <label class="fortune-type-option">
+              <input type="checkbox" name="fortune-type" value="sukuyo" checked>
+              <span>🌟 宿曜占星術</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="compatibility-box">
+          <label class="detail-checkbox-label">
+            <input type="checkbox" id="compatibility-option-cb">
+            <span>🌟 相性診断も行う</span>
+          </label>
+          <div id="compatibility-fields" class="hidden">
+            <div class="form-group">
+              <label for="partner-birthdate">相手の生年月日</label>
+              <input type="date" id="partner-birthdate">
+            </div>
+            <div class="form-group">
+              <label for="relationship">関係性</label>
+              <input type="text" id="relationship" placeholder="例：恋人、片思い、夫婦、仕事仲間">
+            </div>
+          </div>
+        </div>
+
         <button type="submit" class="btn-primary" id="submit-btn">
           <span class="btn-icon">✨</span> 鑑定する
         </button>
@@ -81,6 +121,10 @@
           <h3>🦁 動物占い</h3>
           <div id="animals"></div>
         </div>
+        <div class="stat-card sukuyo">
+          <h3>🌟 宿曜占星術</h3>
+          <div id="sukuyo"></div>
+        </div>
       </div>
 
       <div class="reading-header">
@@ -105,6 +149,9 @@
       </div>
 
       <div id="action-buttons" class="action-buttons hidden">
+        <button id="report-btn" class="btn-primary" style="width:auto;padding:12px 24px;background:linear-gradient(135deg,#a07830,#c9a055);border:none">
+          📜 鑑定書を作成
+        </button>
         <button id="image-btn" class="btn-primary" style="width:auto;padding:12px 24px">
           🖼️ 画像として保存
         </button>
@@ -143,7 +190,7 @@
   </main>
 
   <footer>
-    <p>四柱推命 × 数秘術 × 動物占い　統合鑑定システム</p>
+    <p>四柱推命 × 数秘術 × 動物占い × 宿曜占星術　統合鑑定システム</p>
   </footer>
 
   <script src="/static/app.js"></script>

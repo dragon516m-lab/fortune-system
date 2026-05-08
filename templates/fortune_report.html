@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>天命鑑定書 — {{ name or "ご依頼主" }} 様</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;700&display=swap');
+
+    :root {
+      --paper: #f7f0e3;
+      --paper-dark: #ede4cf;
+      --ink: #2c1f0e;
+      --ink-light: #5a4433;
+      --gold: #a07830;
+      --gold-light: #c9a055;
+      --red: #8b2020;
+      --blue: #1a3a6b;
+      --green: #1a5a2a;
+      --purple: #4a1a6b;
+      --border: #c4a96a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Serif JP', 'Yu Mincho', 'YuMincho', '游明朝', serif;
+      background: #d4c5a9;
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    /* 印刷ボタン */
+    .print-bar {
+      text-align: center;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    .print-bar button {
+      background: var(--gold);
+      color: white;
+      border: none;
+      padding: 10px 28px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 0.1em;
+    }
+    .print-bar button:hover { background: var(--gold-light); }
+    .print-bar .close-btn {
+      background: #888;
+    }
+
+    /* 鑑定書本体 */
+    .report {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 3px double var(--border);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+      position: relative;
+      padding: 50px 60px;
+    }
+
+    /* 四隅の飾り */
+    .corner {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+    }
+    .corner svg { width: 100%; height: 100%; }
+    .corner-tl { top: 6px; left: 6px; }
+    .corner-tr { top: 6px; right: 6px; transform: scaleX(-1); }
+    .corner-bl { bottom: 6px; left: 6px; transform: scaleY(-1); }
+    .corner-br { bottom: 6px; right: 6px; transform: scale(-1); }
+
+    /* ヘッダー */
+    .report-header {
+      text-align: center;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+    .report-title {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 0.35em;
+      color: var(--ink);
+      text-shadow: 1px 1px 0 rgba(160,120,48,0.3);
+    }
+    .report-subtitle {
+      font-size: 0.85rem;
+      color: var(--gold);
+      letter-spacing: 0.2em;
+      margin-top: 6px;
+    }
+    .report-meta {
+      margin-top: 14px;
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      font-size: 0.88rem;
+      color: var(--ink-light);
+    }
+    .report-meta span { letter-spacing: 0.05em; }
+    .report-meta strong { color: var(--ink); }
+
+    /* セクション */
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .section-title-bar {
+      width: 5px;
+      height: 22px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .section-title h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--ink);
+    }
+    .section-title .section-sub {
+      font-size: 0.78rem;
+      color: var(--ink-light);
+      letter-spacing: 0.1em;
+    }
+    .section-title-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+      opacity: 0.6;
+    }
+
+    /* 色定義 */
+    .bar-shichusuimei { background: var(--red); }
+    .bar-numerology   { background: var(--blue); }
+    .bar-animal       { background: var(--green); }
+    .bar-sukuyo       { background: var(--gold); }
+    .bar-reading      { background: var(--gold); }
+    .bar-advice       { background: var(--purple); }
+
+    /* 四柱推命グリッド */
+    .pillars-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .pillar-card {
+      background: var(--paper-dark);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .pillar-label {
+      font-size: 0.72rem;
+      color: var(--ink-light);
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .pillar-kanji {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--red);
+      letter-spacing: 0.05em;
+    }
+    .pillar-element {
+      font-size: 0.72rem;
+      color: var(--ink-light);
+      margin-top: 4px;
+    }
+
+    /* 五行バー */
+    .five-elements {
+      margin-top: 8px;
+    }
+    .fe-title {
+      font-size: 0.78rem;
+      color: var(--ink-light);
+      margin-bottom: 6px;
+      letter-spacing: 0.05em;
+    }
+    .fe-bars {
+      display: flex;
+      gap: 6px;
+    }
+    .fe-item {
+      flex: 1;
+      text-align: center;
+    }
+    .fe-bar-wrap {
+      height: 6px;
+      background: var(--paper-dark);
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-bottom: 4px;
+    }
+    .fe-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+    .fe-bar-fill.木 { background: #2d7a1f; }
+    .fe-bar-fill.火 { background: #c0392b; }
+    .fe-bar-fill.土 { background: #b8860b; }
+    .fe-bar-fill.金 { background: #8b7355; }
+    .fe-bar-fill.水 { background: #1a5276; }
+    .fe-name { font-size: 0.7rem; color: var(--ink-light); }
+    .fe-count { font-size: 0.65rem; color: var(--ink-light); }
+
+    /* 数秘術 */
+    .numbers-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .number-card {
+      background: var(--paper-dark);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .number-label {
+      font-size: 0.72rem;
+      color: var(--ink-light);
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .number-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--blue);
+    }
+    .number-meaning {
+      font-size: 0.7rem;
+      color: var(--ink-light);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    /* 動物占い */
+    .animal-card {
+      background: var(--paper-dark);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .animal-emoji {
+      font-size: 2.8rem;
+      line-height: 1;
+    }
+    .animal-info h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+    .animal-info p {
+      font-size: 0.78rem;
+      color: var(--ink-light);
+      line-height: 1.6;
+    }
+
+    /* 鑑定文 */
+    .reading-box {
+      background: var(--paper-dark);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 20px 22px;
+    }
+    .reading-box .reading-concern {
+      font-size: 0.8rem;
+      color: var(--ink-light);
+      border-left: 3px solid var(--gold);
+      padding-left: 10px;
+      margin-bottom: 14px;
+      line-height: 1.7;
+    }
+    .reading-content {
+      font-size: 0.9rem;
+      line-height: 2;
+      color: var(--ink);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    /* 見出し【】をスタイリング */
+    .reading-content .heading {
+      display: block;
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--gold);
+      margin: 14px 0 4px;
+      letter-spacing: 0.08em;
+    }
+
+    /* アドバイス */
+    .advice-box {
+      background: #f9f4ec;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 16px 20px;
+    }
+    .advice-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .advice-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.85rem;
+      color: var(--ink);
+      line-height: 1.7;
+    }
+    .advice-list li::before {
+      content: "◆";
+      color: var(--gold);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    /* フッター */
+    .report-footer {
+      text-align: center;
+      border-top: 1px solid var(--border);
+      padding-top: 18px;
+      margin-top: 8px;
+    }
+    .report-footer p {
+      font-size: 0.82rem;
+      color: var(--ink-light);
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+    .report-footer .date {
+      font-size: 0.75rem;
+      color: var(--gold);
+      letter-spacing: 0.1em;
+    }
+
+    /* 区切り線 */
+    .divider {
+      border: none;
+      border-top: 1px dashed var(--border);
+      margin: 24px 0;
+      opacity: 0.6;
+    }
+
+    /* 印刷時 */
+    @media print {
+      body { background: white; padding: 0; }
+      .print-bar { display: none; }
+      .report {
+        max-width: 100%;
+        box-shadow: none;
+        border: 2px double #c4a96a;
+        padding: 30px 40px;
+      }
+      .report-title { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="print-bar">
+  <button onclick="window.print()">🖨️ 印刷 / PDFで保存</button>
+  <button class="close-btn" onclick="window.close()">✕ 閉じる</button>
+</div>
+
+<div class="report">
+
+  <!-- 四隅の飾り -->
+  <div class="corner corner-tl">
+    <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 2 L20 2 L2 20 Z" fill="#c4a96a" opacity="0.5"/>
+      <path d="M2 2 L48 2" stroke="#c4a96a" stroke-width="1.5"/>
+      <path d="M2 2 L2 48" stroke="#c4a96a" stroke-width="1.5"/>
+      <circle cx="2" cy="2" r="3" fill="#c4a96a"/>
+      <path d="M8 8 Q20 8 20 20" stroke="#c4a96a" stroke-width="1" fill="none" opacity="0.6"/>
+    </svg>
+  </div>
+  <div class="corner corner-tr">
+    <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 2 L20 2 L2 20 Z" fill="#c4a96a" opacity="0.5"/>
+      <path d="M2 2 L48 2" stroke="#c4a96a" stroke-width="1.5"/>
+      <path d="M2 2 L2 48" stroke="#c4a96a" stroke-width="1.5"/>
+      <circle cx="2" cy="2" r="3" fill="#c4a96a"/>
+      <path d="M8 8 Q20 8 20 20" stroke="#c4a96a" stroke-width="1" fill="none" opacity="0.6"/>
+    </svg>
+  </div>
+  <div class="corner corner-bl">
+    <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 2 L20 2 L2 20 Z" fill="#c4a96a" opacity="0.5"/>
+      <path d="M2 2 L48 2" stroke="#c4a96a" stroke-width="1.5"/>
+      <path d="M2 2 L2 48" stroke="#c4a96a" stroke-width="1.5"/>
+      <circle cx="2" cy="2" r="3" fill="#c4a96a"/>
+      <path d="M8 8 Q20 8 20 20" stroke="#c4a96a" stroke-width="1" fill="none" opacity="0.6"/>
+    </svg>
+  </div>
+  <div class="corner corner-br">
+    <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 2 L20 2 L2 20 Z" fill="#c4a96a" opacity="0.5"/>
+      <path d="M2 2 L48 2" stroke="#c4a96a" stroke-width="1.5"/>
+      <path d="M2 2 L2 48" stroke="#c4a96a" stroke-width="1.5"/>
+      <circle cx="2" cy="2" r="3" fill="#c4a96a"/>
+      <path d="M8 8 Q20 8 20 20" stroke="#c4a96a" stroke-width="1" fill="none" opacity="0.6"/>
+    </svg>
+  </div>
+
+  <!-- ヘッダー -->
+  <div class="report-header">
+    <div class="report-title">天 命 鑑 定 書</div>
+    <div class="report-subtitle">〜 四柱推命 × 数秘術 × 動物占い × 宿曜占星術 統合鑑定 〜</div>
+    <div class="report-meta">
+      {% if name %}
+      <span><strong>{{ name }}</strong> 様</span>
+      {% endif %}
+      <span>生年月日：<strong>{{ birthdate }}</strong></span>
+      <span>鑑定日：<strong>{{ issued_date }}</strong></span>
+    </div>
+  </div>
+
+  <!-- ご相談内容 -->
+  {% if concern %}
+  <div class="section">
+    <div class="section-title">
+      <div class="section-title-bar" style="background:#888"></div>
+      <h2>ご相談内容</h2>
+      <div class="section-title-line"></div>
+    </div>
+    <div style="background:var(--paper-dark);border:1px solid var(--border);border-radius:4px;padding:12px 16px;font-size:0.88rem;line-height:1.8;color:var(--ink-light);">
+      {{ concern }}
+    </div>
+  </div>
+  {% endif %}
+
+  <hr class="divider">
+
+  <!-- 四柱推命 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="section-title-bar bar-shichusuimei"></div>
+      <h2>🌙 四柱推命</h2>
+      <span class="section-sub">宿命の四つの柱</span>
+      <div class="section-title-line"></div>
+    </div>
+
+    <div class="pillars-grid">
+      {% for label, pillar in pillars %}
+      <div class="pillar-card">
+        <div class="pillar-label">{{ label }}柱</div>
+        <div class="pillar-kanji">{{ pillar.stem }}{{ pillar.branch }}</div>
+        <div class="pillar-element">{{ pillar.element }}・{{ pillar.branch_element }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if five_elements %}
+    <div class="five-elements">
+      <div class="fe-title">五行バランス</div>
+      <div class="fe-bars">
+        {% for elem, count in five_elements.items() %}
+        <div class="fe-item">
+          <div class="fe-bar-wrap">
+            <div class="fe-bar-fill {{ elem }}" style="width:{{ (count / max_fe * 100)|int if max_fe > 0 else 0 }}%"></div>
+          </div>
+          <div class="fe-name">{{ elem }}</div>
+          <div class="fe-count">{{ count }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if day_master %}
+    <div style="margin-top:10px;font-size:0.8rem;color:var(--ink-light);">
+      日主：<strong style="color:var(--red)">{{ day_master.stem }}（{{ day_master.element }}）</strong>
+      ／ 最強：<strong>{{ strongest_element }}</strong>　最弱：<strong>{{ weakest_element }}</strong>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- 数秘術 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="section-title-bar bar-numerology"></div>
+      <h2>🔢 数秘術</h2>
+      <span class="section-sub">数字が示す魂の設計図</span>
+      <div class="section-title-line"></div>
+    </div>
+
+    <div class="numbers-grid">
+      <div class="number-card">
+        <div class="number-label">ライフパスナンバー</div>
+        <div class="number-value" style="color:var(--blue)">{{ life_path }}</div>
+        <div class="number-meaning">{{ life_path_meaning }}</div>
+      </div>
+      <div class="number-card">
+        <div class="number-label">デスティニーナンバー</div>
+        <div class="number-value" style="color:var(--red)">{{ destiny }}</div>
+        <div class="number-meaning">{{ destiny_meaning }}</div>
+      </div>
+      <div class="number-card">
+        <div class="number-label">ソウルナンバー</div>
+        <div class="number-value" style="color:var(--green)">{{ soul }}</div>
+        <div class="number-meaning"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 動物占い -->
+  {% if animal_name %}
+  <div class="section">
+    <div class="section-title">
+      <div class="section-title-bar bar-animal"></div>
+      <h2>🦁 動物占い</h2>
+      <span class="section-sub">魂の本質とキャラクター</span>
+      <div class="section-title-line"></div>
+    </div>
+
+    <div class="animal-card">
+      <div class="animal-emoji">{{ animal_emoji }}</div>
+      <div class="animal-info">
+        <h3>{{ animal_name }}</h3>
+        <p>{{ animal_char }}</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if sukuyo %}
+  <!-- 宿曜占星術 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="section-title-bar bar-sukuyo"></div>
+      <h2>🌟 宿曜占星術</h2>
+      <span class="section-sub">人間関係を読み解く星</span>
+      <div class="section-title-line"></div>
+    </div>
+
+    <div class="animal-card">
+      <div class="animal-emoji">🌟</div>
+      <div class="animal-info">
+        <h3>{{ sukuyo.shuku }}（{{ sukuyo.reading }}）</h3>
+        <p>{{ sukuyo.alias }}</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <hr class="divider">
+
+  <!-- 総合鑑定 -->
+  <div class="section">
+    <div class="section-title">
+      <div class="section-title-bar bar-reading"></div>
+      <h2>📜 総合鑑定</h2>
+      <div class="section-title-line"></div>
+    </div>
+
+    <div class="reading-box">
+      {% if concern %}
+      <div class="reading-concern">ご相談：{{ concern }}</div>
+      {% endif %}
+      <div class="reading-content" id="reading-content">{{ reading }}</div>
+    </div>
+  </div>
+
+  <!-- フッター -->
+  <div class="report-footer">
+    <p>✨ 天命鑑定 ✨　四柱推命 × 数秘術 × 動物占い × 宿曜占星術 統合鑑定システム</p>
+    <p class="date">鑑定発行日：{{ issued_date }}</p>
+  </div>
+
+</div>
+
+<script>
+  // 【見出し】をスタイリング
+  document.addEventListener("DOMContentLoaded", () => {
+    const el = document.getElementById("reading-content");
+    if (!el) return;
+    el.innerHTML = el.textContent
+      .replace(/【([^】]+)】/g, '<span class="heading">【$1】</span>');
+  });
+</script>
+</body>
+</html>

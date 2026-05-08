@@ -32,21 +32,23 @@ try:
 except ImportError:
     _sb_create = None
 
-from fortune.calculator import calculate_all, format_for_prompt
+from fortune.calculator import calculate_all, calculate_sukuyo_compatibility, format_for_prompt, normalize_systems
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
 app = Flask(__name__)
 app.logger.disabled = True
 
-RESULTS_DIR = Path("results")
+BASE_DIR = Path(__file__).resolve().parent
+
+RESULTS_DIR = BASE_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
-ORDERS_DIR = Path("orders")
+ORDERS_DIR = BASE_DIR / "orders"
 ORDERS_DIR.mkdir(exist_ok=True)
 ORDERS_FILE = ORDERS_DIR / "coconala_orders.json"
 
-DATA_DIR = Path("data")
+DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
 
@@ -79,14 +81,7 @@ def save_orders(orders):
     )
 
 
-def load_history_data():
-    sb = get_supabase()
-    if sb:
-        try:
-            res = sb.table("history").select("*").order("id").execute()
-            return res.data or []
-        except Exception:
-            pass
+def load_local_history_data():
     if not HISTORY_FILE.exists():
         return []
     try:
@@ -95,32 +90,64 @@ def load_history_data():
         return []
 
 
-def append_history_entry(entry: dict) -> int:
+def save_local_history_data(history):
+    HISTORY_FILE.write_bytes(
+        json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+
+
+def load_history_data():
+    """履歴を取得する。ローカルJSONを正として、Supabase分があれば補完する。"""
+    history = []
+    for row in load_local_history_data():
+        item = dict(row)
+        item["_history_source"] = "local"
+        item["_history_ref"] = f"local:{item.get('id')}"
+        history.append(item)
+
+    seen = {(h.get("timestamp"), h.get("file_id")) for h in history}
+
     sb = get_supabase()
     if sb:
         try:
-            row = {k: v for k, v in entry.items() if k != "id"}
-            res = sb.table("history").insert(row).execute()
-            return (res.data[0]["id"]) if res.data else 0
+            res = sb.table("history").select("*").order("id").execute()
+            for row in (res.data or []):
+                key = (row.get("timestamp"), row.get("file_id"))
+                if key not in seen:
+                    item = dict(row)
+                    item["_history_source"] = "cloud"
+                    item["_history_ref"] = f"cloud:{item.get('id')}"
+                    history.append(item)
+                    seen.add(key)
         except Exception:
             pass
-    # JSONファイルへフォールバック
-    try:
-        history = load_history_data()
-        next_id = (history[-1]["id"] + 1) if history else 1
-        entry["id"] = next_id
-        history.append(entry)
-        HISTORY_FILE.write_bytes(
-            json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
-        )
-        return next_id
-    except Exception:
-        return 0
+
+    return history
+
+
+def append_history_entry(entry: dict) -> int:
+    """履歴は必ずローカルに残す。Supabaseは同期先として扱う。"""
+    history = load_local_history_data()
+    next_id = max((int(h.get("id", 0)) for h in history), default=0) + 1
+    entry["id"] = next_id
+    history.append(entry)
+    save_local_history_data(history)
+
+    sb = get_supabase()
+    if sb:
+        try:
+            row = {k: v for k, v in entry.items() if k not in ("id", "fortune_data")}
+            sb.table("history").insert(row).execute()
+        except Exception:
+            pass
+
+    return next_id
 
 
 FORTUNE_SYSTEM_PROMPT = (
     "\u3042\u306a\u305f\u306f\u56db\u67f1\u63a8\u547d\u30fb"
-    "\u6570\u79d8\u8853\u30fb\u52d5\u7269\u5360\u3044\u306b"
+    "\u6570\u79d8\u8853\u30fb\u52d5\u7269\u5360\u3044\u30fb"
+    "\u5bbf\u66dc\u5360\u661f\u8853\u306b"
     "\u7cbe\u901a\u3057\u305f\u5360\u3044\u5e2b\u3067\u3059\u3002"
     "\u6e29\u304b\u307f\u306e\u3042\u308b\u65e5\u672c\u8a9e\u3067"
     "\u3001\u76f8\u8ac7\u8005\u306b\u5bc4\u308a\u6dfb\u3063\u305f"
@@ -237,6 +264,7 @@ def get_fortune():
     detailed_answers   = list(body.get("detailed_answers") or [])
     partner_birthdate  = str(body.get("partner_birthdate") or "")
     relationship       = str(body.get("relationship") or "")
+    selected_systems   = normalize_systems(list(body.get("selected_systems") or []))
 
     if not birthdate_s or not concern:
         return json_resp({"error": "missing_params"}, 400)
@@ -247,8 +275,26 @@ def get_fortune():
         return json_resp({"error": "invalid_date"}, 400)
 
     try:
-        fortune_data = calculate_all(bd.year, bd.month, bd.day)
-        prompt       = format_for_prompt(fortune_data, concern, name)
+        fortune_data = calculate_all(bd.year, bd.month, bd.day, selected_systems)
+        sukuyo_compatibility = None
+        if partner_birthdate and "sukuyo" in selected_systems:
+            try:
+                pbd = datetime.datetime.strptime(partner_birthdate, "%Y-%m-%d")
+                sukuyo_compatibility = calculate_sukuyo_compatibility(
+                    bd.year, bd.month, bd.day,
+                    pbd.year, pbd.month, pbd.day,
+                )
+                fortune_data["sukuyo_compatibility"] = sukuyo_compatibility
+            except ValueError:
+                return json_resp({"error": "invalid_partner_date"}, 400)
+        prompt = format_for_prompt(
+            fortune_data,
+            concern,
+            name,
+            partner_birthdate=partner_birthdate,
+            relationship=relationship,
+            sukuyo_compatibility=sukuyo_compatibility,
+        )
         if detail_context:
             prompt = prompt.replace(
                 f"お悩み・ご相談：{concern}",
@@ -275,10 +321,7 @@ def get_fortune():
             ts  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             fid = f"fortune_{ts}"
 
-            # doneを先に送ってUIをすぐ更新する
-            yield sse_bytes({"done": True, "file_id": fid, "fortune_data": fortune_data})
-
-            # 保存はdone送信後に実施（UIをブロックしない）
+            history_id = 0
             try:
                 path = RESULTS_DIR / f"{fid}.json"
                 path.write_bytes(json.dumps({
@@ -292,7 +335,7 @@ def get_fortune():
             except Exception:
                 pass
 
-            append_history_entry({
+            history_id = append_history_entry({
                 "timestamp":           datetime.datetime.now().isoformat(),
                 "name":                name,
                 "birthdate":           birthdate_s,
@@ -301,11 +344,14 @@ def get_fortune():
                 "relationship":        relationship,
                 "detailed_questions":  detailed_questions,
                 "detailed_answers":    detailed_answers,
+                "fortune_data":         fortune_data,
                 "result":              full_text,
                 "compatibility_result": "",
                 "chat_messages":       [],
                 "file_id":             fid,
             })
+
+            yield sse_bytes({"done": True, "file_id": fid, "fortune_data": fortune_data, "history_id": history_id})
 
         except Exception as e:
             yield sse_bytes({"error": safe_str(e)})
@@ -453,40 +499,47 @@ def debug_supabase():
 
 @app.route("/api/history-list")
 def get_history_list():
-    sb = get_supabase()
-    if sb:
-        try:
-            res = sb.table("history").select("id,timestamp,name,birthdate,consultation,file_id").order("id", desc=True).limit(20).execute()
-            items = []
-            for row in (res.data or []):
-                concern = str(row.get("consultation") or "")
-                items.append({
-                    "file_id":    row.get("file_id") or "",
-                    "history_id": row.get("id"),
-                    "timestamp":  str(row.get("timestamp", ""))[:16].replace("T", " "),
-                    "name":       str(row.get("name") or ""),
-                    "birthdate":  str(row.get("birthdate") or ""),
-                    "concern":    concern[:30] + "..." if len(concern) > 30 else concern,
-                })
-            return Response(response=_safe_dumps(items), content_type="application/json; charset=utf-8")
-        except Exception:
-            pass
-    # Supabase未設定時はローカルファイルにフォールバック
     items = []
-    for p in sorted(RESULTS_DIR.glob("fortune_*.json"), reverse=True)[:20]:
+    history = sorted(
+        load_history_data(),
+        key=lambda h: (str(h.get("timestamp") or ""), int(h.get("id") or 0)),
+        reverse=True,
+    )
+
+    for row in history[:20]:
+        concern = str(row.get("consultation") or row.get("concern") or "")
+        items.append({
+            "file_id":    row.get("file_id") or "",
+            "history_id": row.get("id"),
+            "history_ref": row.get("_history_ref") or f"local:{row.get('id')}",
+            "timestamp":  str(row.get("timestamp", ""))[:16].replace("T", " "),
+            "name":       str(row.get("name") or ""),
+            "birthdate":  str(row.get("birthdate") or ""),
+            "concern":    concern[:30] + "..." if len(concern) > 30 else concern,
+        })
+
+    seen_files = {item["file_id"] for item in items if item.get("file_id")}
+    for p in sorted(RESULTS_DIR.glob("fortune_*.json"), reverse=True):
+        if len(items) >= 20:
+            break
+        if p.stem in seen_files:
+            continue
         try:
-            data    = json.loads(p.read_bytes())
+            data = json.loads(p.read_bytes())
             concern = str(data.get("concern") or "")
             items.append({
                 "file_id":    p.stem,
                 "history_id": None,
+                "history_ref": None,
                 "timestamp":  str(data.get("timestamp", ""))[:16].replace("T", " "),
                 "name":       str(data.get("name") or ""),
                 "birthdate":  str(data.get("birthdate") or ""),
                 "concern":    concern[:30] + "..." if len(concern) > 30 else concern,
             })
+            seen_files.add(p.stem)
         except Exception:
             pass
+
     return Response(
         response=_safe_dumps(items),
         content_type="application/json; charset=utf-8",
@@ -512,9 +565,11 @@ def download_result(file_id):
         return json_resp({"error": "not_found"}, 404)
 
     data = json.loads(path.read_bytes())
-    sc   = data["fortune_data"]["shichusuimei"]
-    num  = data["fortune_data"]["numerology"]
-    ani  = data["fortune_data"]["animal"]
+    fd   = data.get("fortune_data", {})
+    sc   = fd.get("shichusuimei")
+    num  = fd.get("numerology")
+    ani  = fd.get("animal")
+    sy   = fd.get("sukuyo")
 
     lines = [
         "=" * 50,
@@ -524,12 +579,21 @@ def download_result(file_id):
         "Birthdate: " + str(data.get("birthdate", "")),
         "Concern: " + str(data.get("concern", "")),
         "",
-        "[Pillars] " + sc["year_pillar"]["pillar"]
+        "[Pillars] " + (
+            sc["year_pillar"]["pillar"]
             + " / " + sc["month_pillar"]["pillar"]
-            + " / " + sc["day_pillar"]["pillar"],
-        "[Life Path] " + str(num["life_path_number"]),
-        "[Animal] " + ani["year_animal"]["animal"]
-            + " / " + ani["day_animal"]["animal"],
+            + " / " + sc["day_pillar"]["pillar"]
+            if sc else "not selected"
+        ),
+        "[Life Path] " + (str(num["life_path_number"]) if num else "not selected"),
+        "[Animal] " + (
+            ani["year_animal"]["animal"] + " / " + ani["day_animal"]["animal"]
+            if ani else "not selected"
+        ),
+        "[Sukuyo] " + (
+            sy["shuku"] + " (" + sy["reading"] + ")"
+            if sy else "not selected"
+        ),
         "",
         "[Reading]",
         str(data.get("reading", "")),
@@ -888,6 +952,88 @@ def history_page():
     return render_template("history.html")
 
 
+@app.route("/fortune-report/<file_id>")
+def fortune_report(file_id):
+    """プロ仕様の鑑定書ページ"""
+    path = RESULTS_DIR / f"{file_id}.json"
+    if not path.exists():
+        return "鑑定データが見つかりません", 404
+
+    try:
+        data = json.loads(path.read_bytes())
+    except Exception:
+        return "データ読み込みエラー", 500
+
+    fd = data.get("fortune_data", {})
+    sc = fd.get("shichusuimei", {})
+    nu = fd.get("numerology", {})
+    an = fd.get("animal", {})
+    sy = fd.get("sukuyo", {})
+
+    # 四柱
+    pillars = [
+        ("年", sc.get("year_pillar", {})),
+        ("月", sc.get("month_pillar", {})),
+        ("日", sc.get("day_pillar", {})),
+        ("時", sc.get("hour_pillar", {})),
+    ]
+
+    # 五行
+    fe_count = sc.get("five_elements", {}).get("count", {})
+    max_fe   = max(fe_count.values()) if fe_count else 1
+
+    # 動物
+    year_animal = an.get("year_animal", {})
+    animal_raw  = year_animal.get("animal", "")
+    animal_emoji_map = {
+        "こじか": "🦌", "たぬき": "🦝", "ひつじ": "🐑", "ねこ": "🐱",
+        "こじか（黒）": "🦌", "こじか（白）": "🦌", "こじか（茶）": "🦌",
+        "りゅう": "🐉", "ぺがさす": "🦄", "しし": "🦁", "さる": "🐒",
+        "とら": "🐯", "うさぎ": "🐰", "ぞう": "🐘", "늑대": "🐺",
+        "いのしし": "🐗", "ちーた": "🐆", "ぱんだ": "🐼", "わし": "🦅",
+        "おおかみ": "🐺", "こくじゃく": "🦚", "たか": "🦅",
+    }
+    animal_emoji = animal_emoji_map.get(animal_raw.lower(), "🔮")
+
+    # 発行日
+    ts = data.get("timestamp", "")
+    try:
+        issued_date = datetime.datetime.fromisoformat(ts).strftime("%Y年%m月%d日")
+    except Exception:
+        issued_date = datetime.datetime.now().strftime("%Y年%m月%d日")
+
+    # 生年月日フォーマット
+    bd_str = data.get("birthdate", "")
+    try:
+        bd_fmt = datetime.datetime.strptime(bd_str, "%Y-%m-%d").strftime("%Y年%m月%d日")
+    except Exception:
+        bd_fmt = bd_str
+
+    return render_template(
+        "fortune_report.html",
+        name=data.get("name", ""),
+        birthdate=bd_fmt,
+        concern=data.get("concern", ""),
+        issued_date=issued_date,
+        reading=data.get("reading", ""),
+        pillars=pillars,
+        five_elements=fe_count,
+        max_fe=max_fe,
+        day_master=sc.get("day_master", {}),
+        strongest_element=sc.get("five_elements", {}).get("strongest", ""),
+        weakest_element=sc.get("five_elements", {}).get("weakest", ""),
+        life_path=nu.get("life_path_number", ""),
+        life_path_meaning=nu.get("life_path_meaning", ""),
+        destiny=nu.get("destiny_number", ""),
+        destiny_meaning=nu.get("destiny_meaning", ""),
+        soul=nu.get("soul_number", ""),
+        animal_name=animal_raw,
+        animal_emoji=animal_emoji,
+        animal_char=year_animal.get("character") or year_animal.get("traits", ""),
+        sukuyo=sy,
+    )
+
+
 @app.route("/api/history")
 def get_history_api():
     history = load_history_data()
@@ -905,7 +1051,7 @@ def get_history_api():
     # 一覧では result（長文）を除外して軽量化
     result = []
     for h in filtered:
-        row = {k: v for k, v in h.items() if k not in ("result", "compatibility_result")}
+        row = {k: v for k, v in h.items() if k not in ("result", "compatibility_result", "fortune_data")}
         row["has_detail"] = bool(h.get("detailed_questions"))
         row["has_result"] = bool(h.get("result"))
         result.append(row)
@@ -920,6 +1066,44 @@ def get_history_entry(history_id):
     if not entry:
         return json_resp({"error": "not_found"}, 404)
     return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+
+
+@app.route("/api/history-entry/<path:history_ref>")
+def get_history_entry_by_ref(history_ref):
+    """端末間共有用に、local/cloudの出どころを含めて履歴を取得する。"""
+    if ":" not in history_ref:
+        try:
+            return get_history_entry(int(history_ref))
+        except ValueError:
+            return json_resp({"error": "invalid_history_ref"}, 400)
+
+    source, raw_id = history_ref.split(":", 1)
+    try:
+        history_id = int(raw_id)
+    except ValueError:
+        return json_resp({"error": "invalid_history_ref"}, 400)
+
+    if source == "local":
+        entry = next((h for h in load_local_history_data() if h.get("id") == history_id), None)
+        if not entry:
+            return json_resp({"error": "not_found"}, 404)
+        return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+
+    if source == "cloud":
+        sb = get_supabase()
+        if sb:
+            try:
+                res = sb.table("history").select("*").eq("id", history_id).limit(1).execute()
+                if res.data:
+                    return Response(response=_safe_dumps(res.data[0]), content_type="application/json; charset=utf-8")
+            except Exception:
+                pass
+        entry = next((h for h in load_history_data() if h.get("_history_ref") == history_ref), None)
+        if entry:
+            return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+        return json_resp({"error": "not_found"}, 404)
+
+    return json_resp({"error": "invalid_history_ref"}, 400)
 
 
 @app.route("/api/history/export/csv")

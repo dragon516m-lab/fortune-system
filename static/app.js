@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadHistory();
 
   document.getElementById("fortune-form").addEventListener("submit", handleSubmit);
+  document.getElementById("report-btn").addEventListener("click", openFortuneReport);
   document.getElementById("image-btn").addEventListener("click", generateFortuneImage);
   document.getElementById("download-btn").addEventListener("click", handleDownload);
   document.getElementById("copy-btn").addEventListener("click", handleCopy);
@@ -17,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("retry-btn").addEventListener("click", handleRetry);
   document.getElementById("threads-btn").addEventListener("click", handleThreadsPost);
   document.getElementById("detail-option-cb").addEventListener("change", handleDetailOptionChange);
+  document.getElementById("compatibility-option-cb").addEventListener("change", handleCompatibilityOptionChange);
   document.getElementById("generate-questions-btn").addEventListener("click", generateFollowUpQuestions);
   document.getElementById("chat-open-btn").addEventListener("click", openChat);
   document.getElementById("chat-send-btn").addEventListener("click", sendChatMessage);
@@ -26,6 +28,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 生年月日の最大値を今日に設定
   document.getElementById("birthdate").max = new Date().toISOString().split("T")[0];
+  document.getElementById("partner-birthdate").max = new Date().toISOString().split("T")[0];
 });
 
 // ===== フォーム送信 =====
@@ -35,9 +38,21 @@ async function handleSubmit(e) {
   const name = document.getElementById("name").value.trim();
   const birthdate = document.getElementById("birthdate").value;
   const concern = document.getElementById("concern").value.trim();
+  const selectedSystems = getSelectedFortuneTypes();
+  const compatibilityEnabled = document.getElementById("compatibility-option-cb").checked;
+  const partnerBirthdate = compatibilityEnabled ? document.getElementById("partner-birthdate").value : "";
+  const relationship = compatibilityEnabled ? document.getElementById("relationship").value.trim() : "";
 
   if (!birthdate || !concern) {
     alert("生年月日とお悩みを入力してください");
+    return;
+  }
+  if (selectedSystems.length === 0) {
+    alert("占術を1つ以上選択してください");
+    return;
+  }
+  if (compatibilityEnabled && !partnerBirthdate) {
+    alert("相性診断を行う場合は、相手の生年月日を入力してください");
     return;
   }
 
@@ -75,8 +90,9 @@ async function handleSubmit(e) {
         detail_context:     detailContext || "",
         detailed_questions: dQuestions,
         detailed_answers:   dAnswers,
-        partner_birthdate:  "",
-        relationship:       "",
+        partner_birthdate:  partnerBirthdate,
+        relationship:       relationship,
+        selected_systems:   selectedSystems,
       }),
     });
 
@@ -166,7 +182,10 @@ function renderFortuneStats(data) {
   // 四柱推命
   const sc = data.shichusuimei;
   const pillarsEl = document.getElementById("pillars");
-  pillarsEl.innerHTML = `
+  const shichusuimeiCard = document.querySelector(".stat-card.shichusuimei");
+  if (sc) {
+    shichusuimeiCard.classList.remove("hidden");
+    pillarsEl.innerHTML = `
     <div class="pillar-row">
       <span class="pillar-badge" title="年柱">年 ${sc.year_pillar.pillar}</span>
       <span class="pillar-badge" title="月柱">月 ${sc.month_pillar.pillar}</span>
@@ -179,22 +198,37 @@ function renderFortuneStats(data) {
   fiveEl.innerHTML = `<div class="element-bar">
     ${["木","火","土","金","水"].map(e => `<span class="element-tag">${e}${fe[e]}</span>`).join("")}
   </div>`;
+  } else {
+    shichusuimeiCard.classList.add("hidden");
+    pillarsEl.innerHTML = "";
+    document.getElementById("five-elements").innerHTML = "";
+  }
 
   // 数秘術
   const num = data.numerology;
   const numbersEl = document.getElementById("numbers");
-  numbersEl.innerHTML = `
+  const numerologyCard = document.querySelector(".stat-card.numerology");
+  if (num) {
+    numerologyCard.classList.remove("hidden");
+    numbersEl.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
       <span class="number-big">${num.life_path_number}</span>
       <span style="font-size:0.8rem;color:#9e9e9e">ライフパス${num.is_master_number ? '<br><span style="color:#ffd700">マスターナンバー</span>' : ''}</span>
     </div>
     <p style="font-size:0.8rem;color:#9e9e9e">デスティニー：${num.destiny_number} / ソウル：${num.soul_number}</p>
   `;
+  } else {
+    numerologyCard.classList.add("hidden");
+    numbersEl.innerHTML = "";
+  }
 
   // 動物占い
   const ani = data.animal;
   const animalsEl = document.getElementById("animals");
-  animalsEl.innerHTML = `
+  const animalCard = document.querySelector(".stat-card.animal");
+  if (ani) {
+    animalCard.classList.remove("hidden");
+    animalsEl.innerHTML = `
     <div style="display:flex;gap:16px;align-items:center;margin-bottom:8px">
       <div style="text-align:center">
         <div class="animal-emoji">${ani.year_animal.emoji}</div>
@@ -207,6 +241,33 @@ function renderFortuneStats(data) {
     </div>
     <p style="font-size:0.78rem;color:#9e9e9e">${ani.year_animal.animal} × ${ani.day_animal.animal}</p>
   `;
+  } else {
+    animalCard.classList.add("hidden");
+    animalsEl.innerHTML = "";
+  }
+
+  // 宿曜占星術
+  const sy = data.sukuyo;
+  const sukuyoEl = document.getElementById("sukuyo");
+  const sukuyoCard = document.querySelector(".stat-card.sukuyo");
+  if (sy) {
+    sukuyoCard.classList.remove("hidden");
+    let compatibility = "";
+    if (data.sukuyo_compatibility?.compatibility) {
+      const comp = data.sukuyo_compatibility.compatibility;
+      compatibility = `<p style="font-size:0.78rem;color:#9e9e9e;margin-top:6px">相性：${comp.person_a_shuku} × ${comp.person_b_shuku}<br>${comp.category}</p>`;
+    }
+    sukuyoEl.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+        <span class="number-big" style="font-size:1.55rem;color:#ffd700">${sy.shuku}</span>
+      </div>
+      <p style="font-size:0.78rem;color:#9e9e9e">${sy.reading}<br>${sy.alias}</p>
+      ${compatibility}
+    `;
+  } else {
+    sukuyoCard.classList.add("hidden");
+    sukuyoEl.innerHTML = "";
+  }
 }
 
 // ===== ダウンロード =====
@@ -264,6 +325,7 @@ async function handleThreadsPost() {
 function buildThreadsText(fortuneData, readingRaw) {
   const ani = fortuneData.animal;
   const num = fortuneData.numerology;
+  const sy = fortuneData.sukuyo;
 
   // 鑑定文から最初のセクションのテキストを抜き出す
   const plain = readingRaw
@@ -276,12 +338,13 @@ function buildThreadsText(fortuneData, readingRaw) {
   const header = [
     "✨ 天命鑑定 ✨",
     "",
-    `${ani.year_animal.emoji} ${ani.year_animal.animal} × ${ani.day_animal.emoji} ${ani.day_animal.animal}`,
-    `🔢 ライフパス ${num.life_path_number}`,
+    ani ? `${ani.year_animal.emoji} ${ani.year_animal.animal} × ${ani.day_animal.emoji} ${ani.day_animal.animal}` : "",
+    num ? `🔢 ライフパス ${num.life_path_number}` : "",
+    sy ? `🌟 ${sy.shuku}（${sy.reading}）` : "",
     "",
-  ].join("\n");
+  ].filter(line => line !== "").join("\n");
 
-  const hashtags = "\n\n#占い #四柱推命 #数秘術 #動物占い #天命鑑定";
+  const hashtags = "\n\n#占い #四柱推命 #数秘術 #動物占い #宿曜占星術 #天命鑑定";
   const maxExcerpt = 500 - header.length - hashtags.length;
   const body = plain.length > maxExcerpt ? plain.slice(0, maxExcerpt - 1) + "…" : plain;
 
@@ -525,6 +588,22 @@ function handleDetailOptionChange(e) {
   }
 }
 
+function handleCompatibilityOptionChange(e) {
+  const fields = document.getElementById("compatibility-fields");
+  if (e.target.checked) {
+    fields.classList.remove("hidden");
+  } else {
+    fields.classList.add("hidden");
+    document.getElementById("partner-birthdate").value = "";
+    document.getElementById("relationship").value = "";
+  }
+}
+
+function getSelectedFortuneTypes() {
+  return Array.from(document.querySelectorAll('input[name="fortune-type"]:checked'))
+    .map(input => input.value);
+}
+
 async function generateFollowUpQuestions() {
   const concern = document.getElementById("concern").value.trim();
   if (!concern) {
@@ -688,7 +767,7 @@ async function loadHistory() {
     }
 
     listEl.innerHTML = items.map(item => `
-      <div class="history-item" onclick="loadReading('${item.file_id}', ${item.history_id != null ? item.history_id : 'null'})">
+      <div class="history-item" onclick="loadReading(${JSON.stringify(item.file_id || "")}, ${JSON.stringify(item.history_ref || null)})">
         <div>
           <div class="history-concern">${item.name ? `【${item.name}】` : ""}${item.concern}</div>
           <div class="history-meta">${item.timestamp} | ${item.birthdate}</div>
@@ -702,11 +781,11 @@ async function loadHistory() {
 }
 
 // ===== 過去の鑑定を表示 =====
-async function loadReading(fileId, historyId) {
+async function loadReading(fileId, historyRef) {
   try {
     let data;
-    if (historyId) {
-      const res = await fetch(`/api/history/${historyId}`);
+    if (historyRef) {
+      const res = await fetch(`/api/history-entry/${encodeURIComponent(historyRef)}`);
       data = await res.json();
       data.reading = data.result || "";
     } else {
@@ -732,7 +811,7 @@ async function loadReading(fileId, historyId) {
 
     currentFileId      = fileId;
     currentReadingText = data.reading || "";
-    currentHistoryId   = historyId || null;
+    currentHistoryId   = data.id || null;
     currentFortuneData = data.fortune_data || null;
 
     resultSection.scrollIntoView({ behavior: "smooth" });
@@ -855,6 +934,16 @@ function escapeHtml(str) {
   return esc(str).replace(/\n/g, "<br>");
 }
 
+// ===== 鑑定書ページを開く =====
+
+function openFortuneReport() {
+  if (!currentFileId) {
+    showToast("鑑定を完了してから鑑定書を作成してください");
+    return;
+  }
+  window.open(`/fortune-report/${currentFileId}`, "_blank");
+}
+
 // ===== 画像生成（Canvas API） =====
 
 function generateFortuneImage() {
@@ -862,9 +951,10 @@ function generateFortuneImage() {
 
   const name      = document.getElementById("name").value.trim() || "鑑定者";
   const birthdate = document.getElementById("birthdate").value;
-  const ani = currentFortuneData.animal;
-  const num = currentFortuneData.numerology;
-  const sc  = currentFortuneData.shichusuimei;
+  const ani = currentFortuneData.animal || null;
+  const num = currentFortuneData.numerology || null;
+  const sc  = currentFortuneData.shichusuimei || null;
+  const sy  = currentFortuneData.sukuyo || null;
 
   const W = 1080, H = 1350;
   const canvas = document.createElement("canvas");
@@ -942,7 +1032,7 @@ function generateFortuneImage() {
   y += 48;
   ctx.fillStyle = "rgba(179,157,219,0.75)";
   ctx.font = `28px ${font}`;
-  ctx.fillText("四柱推命 × 数秘術 × 動物占い  統合鑑定", W/2, y);
+  ctx.fillText("四柱推命 × 数秘術 × 動物占い × 宿曜占星術", W/2, y);
 
   y += 44;
   imgDivider(ctx, W, y);
@@ -966,45 +1056,56 @@ function generateFortuneImage() {
   y += 205;
   ctx.fillStyle = "rgba(179,157,219,0.7)";
   ctx.font = `24px ${font}`;
-  ctx.fillText(
-    `年柱 ${sc.year_pillar.pillar}　月柱 ${sc.month_pillar.pillar}　日柱 ${sc.day_pillar.pillar}`,
-    W/2, y
-  );
+  const profileLine = sc
+    ? `年柱 ${sc.year_pillar.pillar}　月柱 ${sc.month_pillar.pillar}　日柱 ${sc.day_pillar.pillar}`
+    : sy
+      ? `宿曜 ${sy.shuku}（${sy.reading}）`
+      : "天命鑑定";
+  ctx.fillText(profileLine, W/2, y);
 
   y += 40;
   imgDivider(ctx, W, y);
 
-  // ---- 動物占いセクション ----
+  // ---- 動物占い / 宿曜セクション ----
   y += 36;
   ctx.fillStyle = "rgba(255,215,0,0.75)";
   ctx.font = `26px ${font}`;
-  ctx.fillText("✦  動物占い  ✦", W/2, y);
+  ctx.fillText(ani ? "✦  動物占い  ✦" : "✦  宿曜占星術  ✦", W/2, y);
 
   y += 16;
   const lx = W/2 - 195, rx = W/2 + 195;
 
-  ctx.font = `88px sans-serif`;
-  ctx.fillText(ani.year_animal.emoji, lx, y + 88);
-  ctx.fillText(ani.day_animal.emoji,  rx, y + 88);
+  if (ani) {
+    ctx.font = `88px sans-serif`;
+    ctx.fillText(ani.year_animal.emoji, lx, y + 88);
+    ctx.fillText(ani.day_animal.emoji,  rx, y + 88);
 
-  ctx.fillStyle = "rgba(255,215,0,0.5)";
-  ctx.font = `38px ${font}`;
-  ctx.fillText("×", W/2, y + 60);
+    ctx.fillStyle = "rgba(255,215,0,0.5)";
+    ctx.font = `38px ${font}`;
+    ctx.fillText("×", W/2, y + 60);
 
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
-  ctx.font = `22px ${font}`;
-  ctx.fillText("表の顔",     lx, y + 118);
-  ctx.fillText("内なる本質", rx, y + 118);
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.font = `22px ${font}`;
+    ctx.fillText("表の顔",     lx, y + 118);
+    ctx.fillText("内なる本質", rx, y + 118);
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `bold 34px ${font}`;
-  ctx.fillText(ani.year_animal.animal, lx, y + 158);
-  ctx.fillText(ani.day_animal.animal,  rx, y + 158);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold 34px ${font}`;
+    ctx.fillText(ani.year_animal.animal, lx, y + 158);
+    ctx.fillText(ani.day_animal.animal,  rx, y + 158);
+  } else if (sy) {
+    ctx.fillStyle = "#ffd700";
+    ctx.font = `bold 68px ${font}`;
+    ctx.fillText(sy.shuku, W/2, y + 92);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = `25px ${font}`;
+    ctx.fillText(`${sy.reading} / ${sy.alias}`, W/2, y + 140);
+  }
 
   y += 185;
   ctx.fillStyle = "rgba(179,157,219,0.65)";
   ctx.font = `23px ${font}`;
-  ctx.fillText(ani.year_animal.traits, W/2, y);
+  ctx.fillText(ani ? ani.year_animal.traits : (sy ? sy.alias : "選択された占術で鑑定"), W/2, y);
 
   y += 40;
   imgDivider(ctx, W, y);
@@ -1013,7 +1114,7 @@ function generateFortuneImage() {
   y += 36;
   ctx.fillStyle = "rgba(255,215,0,0.75)";
   ctx.font = `26px ${font}`;
-  ctx.fillText("✦  数秘術  ✦", W/2, y);
+  ctx.fillText(num ? "✦  数秘術  ✦" : "✦  鑑定の焦点  ✦", W/2, y);
 
   y += 18;
   const numG = ctx.createLinearGradient(W/2-70, 0, W/2+70, 0);
@@ -1021,15 +1122,15 @@ function generateFortuneImage() {
   numG.addColorStop(1, "#ff9fd0");
   ctx.fillStyle = numG;
   ctx.font = `bold 110px ${font}`;
-  ctx.fillText(String(num.life_path_number), W/2, y + 100);
+  ctx.fillText(String(num ? num.life_path_number : "天"), W/2, y + 100);
 
   ctx.fillStyle = "rgba(255,255,255,0.45)";
   ctx.font = `24px ${font}`;
-  ctx.fillText("ライフパスナンバー" + (num.is_master_number ? "（マスターナンバー）" : ""), W/2, y + 138);
+  ctx.fillText(num ? "ライフパスナンバー" + (num.is_master_number ? "（マスターナンバー）" : "") : "オリジナル統合鑑定", W/2, y + 138);
 
   ctx.fillStyle = "rgba(179,157,219,0.8)";
   ctx.font = `23px ${font}`;
-  imgWrapText(ctx, num.life_path_meaning, W/2, y + 178, W - 180, 34);
+  imgWrapText(ctx, num ? num.life_path_meaning : "選択された占術をもとに、今のテーマを丁寧に読み解きます。", W/2, y + 178, W - 180, 34);
 
   y += 235;
   imgDivider(ctx, W, y);

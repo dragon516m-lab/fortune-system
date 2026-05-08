@@ -1,37 +1,142 @@
-"""三つの占術を統合する計算モジュール"""
+"""占術を統合する計算モジュール"""
+
+from __future__ import annotations
 
 import datetime
-from . import shichusuimei, numerology, animal
+from . import shichusuimei, numerology, animal, sukuyo
 
 
-def calculate_all(birth_year: int, birth_month: int, birth_day: int) -> dict:
-    """四柱推命・数秘術・動物占いを一括計算する"""
-    shichusuimei_result = shichusuimei.calculate(birth_year, birth_month, birth_day)
-    numerology_result = numerology.calculate(birth_year, birth_month, birth_day)
-    animal_result = animal.calculate(birth_year, birth_month, birth_day)
+DEFAULT_SYSTEMS = ("shichusuimei", "numerology", "animal", "sukuyo")
 
-    return {
+
+def normalize_systems(selected_systems: list[str] | tuple[str, ...] | None = None) -> list[str]:
+    """選択された占術を既知のキーだけに正規化する。未指定なら全占術。"""
+    if not selected_systems:
+        return list(DEFAULT_SYSTEMS)
+    allowed = set(DEFAULT_SYSTEMS)
+    normalized = [key for key in selected_systems if key in allowed]
+    return normalized or list(DEFAULT_SYSTEMS)
+
+
+def calculate_all(
+    birth_year: int,
+    birth_month: int,
+    birth_day: int,
+    selected_systems: list[str] | tuple[str, ...] | None = None,
+) -> dict:
+    """選択された占術を一括計算する"""
+    systems = normalize_systems(selected_systems)
+    result = {
         "birthdate": {
             "year": birth_year,
             "month": birth_month,
             "day": birth_day,
         },
-        "shichusuimei": shichusuimei_result,
-        "numerology": numerology_result,
-        "animal": animal_result,
+        "selected_systems": systems,
+    }
+
+    if "shichusuimei" in systems:
+        result["shichusuimei"] = shichusuimei.calculate(birth_year, birth_month, birth_day)
+    if "numerology" in systems:
+        result["numerology"] = numerology.calculate(birth_year, birth_month, birth_day)
+    if "animal" in systems:
+        result["animal"] = animal.calculate(birth_year, birth_month, birth_day)
+    if "sukuyo" in systems:
+        result["sukuyo"] = sukuyo.calculate(birth_year, birth_month, birth_day)
+
+    return result
+
+
+def calculate_sukuyo_compatibility(
+    birth_year: int,
+    birth_month: int,
+    birth_day: int,
+    partner_year: int,
+    partner_month: int,
+    partner_day: int,
+) -> dict:
+    """二人分の宿曜と相性区分を計算する。"""
+    person = sukuyo.calculate(birth_year, birth_month, birth_day)
+    partner = sukuyo.calculate(partner_year, partner_month, partner_day)
+    compatibility = sukuyo.calculate_compatibility(person, partner)
+
+    return {
+        "person": person,
+        "partner": partner,
+        "compatibility": compatibility,
     }
 
 
-def format_for_prompt(fortune_data: dict, concern: str, name: str = "") -> str:
+def format_for_prompt(
+    fortune_data: dict,
+    concern: str,
+    name: str = "",
+    partner_birthdate: str = "",
+    relationship: str = "",
+    sukuyo_compatibility: dict | None = None,
+) -> str:
     """Claude APIへのプロンプト用に占いデータをフォーマットする"""
-    sc = fortune_data["shichusuimei"]
-    num = fortune_data["numerology"]
-    ani = fortune_data["animal"]
     bd = fortune_data["birthdate"]
+    systems = fortune_data.get("selected_systems") or list(DEFAULT_SYSTEMS)
 
     name_str = f"お名前：{name}\n" if name else ""
     today = datetime.date.today()
     today_str = f"{today.year}年{today.month}月{today.day}日"
+    data_sections = []
+
+    if "shichusuimei" in fortune_data:
+        sc = fortune_data["shichusuimei"]
+        data_sections.append(f"""【四柱推命データ】
+・年柱：{sc['year_pillar']['pillar']}（{sc['year_pillar']['element']}×{sc['year_pillar']['branch_element']}）
+・月柱：{sc['month_pillar']['pillar']}（{sc['month_pillar']['element']}×{sc['month_pillar']['branch_element']}）
+・日柱（命式の中心）：{sc['day_pillar']['pillar']}（{sc['day_pillar']['element']}×{sc['day_pillar']['branch_element']}）
+・日干（本質）：{sc['day_master']['stem']}（{sc['day_master']['element']}の気質）
+・五行バランス：木{sc['five_elements']['count']['木']} 火{sc['five_elements']['count']['火']} 土{sc['five_elements']['count']['土']} 金{sc['five_elements']['count']['金']} 水{sc['five_elements']['count']['水']}
+・最も強い気：{sc['five_elements']['strongest']} / 最も弱い気：{sc['five_elements']['weakest']}""")
+
+    if "numerology" in fortune_data:
+        num = fortune_data["numerology"]
+        data_sections.append(f"""【数秘術データ】
+・ライフパスナンバー：{num['life_path_number']}{'（マスターナンバー）' if num['is_master_number'] else ''}
+・ライフパスの意味：{num['life_path_meaning']}
+・デスティニーナンバー：{num['destiny_number']}
+・デスティニーの意味：{num['destiny_meaning']}
+・ソウルナンバー：{num['soul_number']}""")
+
+    if "animal" in fortune_data:
+        ani = fortune_data["animal"]
+        data_sections.append(f"""【動物占いデータ】
+・表の顔（年干支）：{ani['year_animal']['emoji']}{ani['year_animal']['animal']}（{ani['year_animal']['pillar']}）
+・資質：{ani['year_animal']['traits']}
+・干の特徴：{ani['year_animal']['stem_modifier']}
+・特別な才能：{ani['year_animal']['special_quality']}
+・内なる本質（日干支）：{ani['day_animal']['emoji']}{ani['day_animal']['animal']}
+・内面の資質：{ani['day_animal']['traits']}
+・表裏の関係：{ani['inner_outer_compatibility']['description']}""")
+
+    if "sukuyo" in fortune_data:
+        sy = fortune_data["sukuyo"]
+        data_sections.append(f"""【宿曜占星術データ】
+・宿：{sy['shuku']}（{sy['reading']}）
+・別名：{sy['alias']}
+・判定補足：{sy['note']}""")
+
+    compatibility_section = ""
+    if partner_birthdate and sukuyo_compatibility:
+        comp = sukuyo_compatibility["compatibility"]
+        person = sukuyo_compatibility["person"]
+        partner = sukuyo_compatibility["partner"]
+        compatibility_section = f"""
+
+【相性診断データ】
+・人物Aの生年月日：{bd['year']}年{bd['month']}月{bd['day']}日
+・人物Bの生年月日：{partner_birthdate}
+・関係性：{relationship or '未指定'}
+・人物Aの宿：{person['shuku']}（{person['reading']}）
+・人物Bの宿：{partner['shuku']}（{partner['reading']}）
+・宿曜の相性区分：{comp['category']}
+・区分の意味：{comp['description']}
+"""
 
     prompt = f"""以下の鑑定データをもとに、深みのある占い鑑定文を日本語で作成してください。
 
@@ -39,45 +144,52 @@ def format_for_prompt(fortune_data: dict, concern: str, name: str = "") -> str:
 {name_str}生年月日：{bd['year']}年{bd['month']}月{bd['day']}日
 鑑定日（今日）：{today_str}
 お悩み・ご相談：{concern}
+選択された占術：{'、'.join(systems)}
 
-【四柱推命データ】
-・年柱：{sc['year_pillar']['pillar']}（{sc['year_pillar']['element']}×{sc['year_pillar']['branch_element']}）
-・月柱：{sc['month_pillar']['pillar']}（{sc['month_pillar']['element']}×{sc['month_pillar']['branch_element']}）
-・日柱（命式の中心）：{sc['day_pillar']['pillar']}（{sc['day_pillar']['element']}×{sc['day_pillar']['branch_element']}）
-・日干（本質）：{sc['day_master']['stem']}（{sc['day_master']['element']}の気質）
-・五行バランス：木{sc['five_elements']['count']['木']} 火{sc['five_elements']['count']['火']} 土{sc['five_elements']['count']['土']} 金{sc['five_elements']['count']['金']} 水{sc['five_elements']['count']['水']}
-・最も強い気：{sc['five_elements']['strongest']} / 最も弱い気：{sc['five_elements']['weakest']}
-
-【数秘術データ】
-・ライフパスナンバー：{num['life_path_number']}{'（マスターナンバー）' if num['is_master_number'] else ''}
-・ライフパスの意味：{num['life_path_meaning']}
-・デスティニーナンバー：{num['destiny_number']}
-・デスティニーの意味：{num['destiny_meaning']}
-・ソウルナンバー：{num['soul_number']}
-
-【動物占いデータ】
-・表の顔（年干支）：{ani['year_animal']['emoji']}{ani['year_animal']['animal']}（{ani['year_animal']['pillar']}）
-・資質：{ani['year_animal']['traits']}
-・干の特徴：{ani['year_animal']['stem_modifier']}
-・特別な才能：{ani['year_animal']['special_quality']}
-・内なる本質（日干支）：{ani['day_animal']['emoji']}{ani['day_animal']['animal']}
-・内面の資質：{ani['day_animal']['traits']}
-・表裏の関係：{ani['inner_outer_compatibility']['description']}
+{chr(10).join(data_sections)}
+{compatibility_section}
 
 【鑑定文の要件】
-1. 上記のデータを統合した鑑定文を日本語で作成してください
-2. 「お悩み・ご相談」に具体的に答えてください
-3. 温かみがあり、励ましと希望を与える文体にしてください
-4. 必ず以下の5つのセクションをすべて書いてください（各100〜150字）：
+1. Use the astrological data above as fixed calculation results. Do not change the calculated signs, numbers, animals, or Sukuyo shuku.
+2. Write the final reading in Japanese with a warm, supportive, practical tone.
+3. 「お悩み・ご相談」に具体的に答えてください
+4. 選択されていない占術には触れないでください
+5. 必ず以下のセクションをすべて書いてください：
    【あなたの本質と天命】
    【{concern[:10]}についての鑑定】
    【強みとチャンスの時期】
    【開運アドバイス】
    【総合メッセージ】
-5. 絵文字を適度に使ってください
-6. 全セクションを必ず最後まで書き切ってください
-7. 【総合メッセージ】の後、署名の直前に必ず以下の一文を入れてください：
+6. 宿曜占星術が選択されている場合は、上記に加えて必ず以下の形式で詳細セクションを入れてください。基本鑑定では、栄親・友衆などの宿名一覧は出さないでください。宿の相性一覧は、相性診断がオンの時だけ扱ってください。
+━━━━━━━━━━━━━━━━
+🌟 人間関係と相性
+（宿曜占星術）
+━━━━━━━━━━━━━━━━
+【あなたの宿】
+宿名、読み仮名、別名を明記
+【基本性格】
+強み、才能、注意点を具体的に
+【仕事・キャリア】
+向いている分野を複数、働き方、才能の活かし方
+【恋愛・人間関係】
+恋愛傾向、人との関わり方、人間関係の特徴
+【2026年の運気】
+宿曜占星術的な今年の流れと意識すべきこと
+【メッセージ】
+この宿を持つ人への温かいメッセージ
+織田信長も戦で使っていた宿曜占星術による分析です。
+━━━━━━━━━━━━━━━━
+7. 相手の生年月日がある場合は、必ず宿曜占星術の相性診断をさらに深く追加してください：
+【二人の宿】
+【相性区分】
+【相性分析】
+【二人の未来】
+この場合だけ、必要に応じて栄親・友衆・安壊・危成・業胎・命などの専門用語を使い、必ず分かりやすい説明を添えてください。注意点と活かし方を具体的に書く
+8. 専門用語は必ず分かりやすく説明してください
+9. 絵文字を適度に使ってください
+10. 全セクションを必ず最後まで書き切ってください
+11. 【総合メッセージ】の後、署名の直前に必ず以下の一文を入れてください：
    「半年後にまた運気の変わり目が来ますので、その頃にまたお声がけいただければ詳しくお伝えできます」
-8. 鑑定文の末尾は必ず「星龍🐉」と署名してください
+12. 鑑定文の末尾は必ず「星龍🐉」と署名してください
 """
     return prompt
