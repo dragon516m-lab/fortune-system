@@ -51,9 +51,14 @@ ORDERS_FILE = ORDERS_DIR / "coconala_orders.json"
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
+TMP_HISTORY_FILE = Path("/tmp/fortune_system_history.json")
+MEMORY_HISTORY = []
 LAST_HISTORY_SYNC = {
     "local_ok": None,
     "local_error": "",
+    "tmp_ok": None,
+    "tmp_error": "",
+    "memory_ok": None,
     "cloud_ok": None,
     "cloud_error": "",
     "cloud_fallback_used": False,
@@ -88,19 +93,54 @@ def save_orders(orders):
     )
 
 
-def load_local_history_data():
-    if not HISTORY_FILE.exists():
+def _read_history_file(path: Path):
+    if not path.exists():
         return []
     try:
-        return json.loads(HISTORY_FILE.read_bytes())
+        data = json.loads(path.read_bytes())
+        return data if isinstance(data, list) else []
     except Exception:
         return []
 
 
-def save_local_history_data(history):
-    HISTORY_FILE.write_bytes(
-        json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
+def _dedupe_history(rows):
+    history = []
+    seen = set()
+    for row in rows:
+        key = (row.get("timestamp"), row.get("file_id"), row.get("id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        history.append(row)
+    return history
+
+
+def load_local_history_data():
+    return _dedupe_history(
+        _read_history_file(HISTORY_FILE)
+        + _read_history_file(TMP_HISTORY_FILE)
+        + MEMORY_HISTORY
     )
+
+
+def save_local_history_data(history):
+    global LAST_HISTORY_SYNC
+    payload = json.dumps(history, ensure_ascii=False, indent=2).encode("utf-8")
+    try:
+        HISTORY_FILE.write_bytes(payload)
+        LAST_HISTORY_SYNC["local_ok"] = True
+        LAST_HISTORY_SYNC["local_error"] = ""
+    except Exception as e:
+        LAST_HISTORY_SYNC["local_ok"] = False
+        LAST_HISTORY_SYNC["local_error"] = safe_str(e)
+
+    try:
+        TMP_HISTORY_FILE.write_bytes(payload)
+        LAST_HISTORY_SYNC["tmp_ok"] = True
+        LAST_HISTORY_SYNC["tmp_error"] = ""
+    except Exception as e:
+        LAST_HISTORY_SYNC["tmp_ok"] = False
+        LAST_HISTORY_SYNC["tmp_error"] = safe_str(e)
 
 
 def load_history_data():
@@ -142,6 +182,9 @@ def append_history_entry(entry: dict) -> int:
     LAST_HISTORY_SYNC.update({
         "local_ok": None,
         "local_error": "",
+        "tmp_ok": None,
+        "tmp_error": "",
+        "memory_ok": None,
         "cloud_ok": None,
         "cloud_error": "",
         "cloud_fallback_used": False,
@@ -151,12 +194,14 @@ def append_history_entry(entry: dict) -> int:
     next_id = max((int(h.get("id", 0)) for h in history), default=0) + 1
     entry["id"] = next_id
     try:
+        MEMORY_HISTORY.append(dict(entry))
+        LAST_HISTORY_SYNC["memory_ok"] = True
         history.append(entry)
         save_local_history_data(history)
-        LAST_HISTORY_SYNC["local_ok"] = True
     except Exception as e:
-        LAST_HISTORY_SYNC["local_ok"] = False
-        LAST_HISTORY_SYNC["local_error"] = safe_str(e)
+        LAST_HISTORY_SYNC["memory_ok"] = False
+        if not LAST_HISTORY_SYNC["local_error"]:
+            LAST_HISTORY_SYNC["local_error"] = safe_str(e)
 
     sb = get_supabase()
     if sb:
@@ -237,6 +282,13 @@ def json_resp(payload, status: int = 200) -> Response:
         status=status,
         content_type="application/json; charset=utf-8",
     )
+
+
+def no_store(resp: Response) -> Response:
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 def safe_str(obj) -> str:
@@ -561,8 +613,11 @@ def history_debug():
 
     return json_resp({
         "history_file": str(HISTORY_FILE),
+        "tmp_history_file": str(TMP_HISTORY_FILE),
         "local_count": len(local_history),
         "local_file_exists": HISTORY_FILE.exists(),
+        "tmp_file_exists": TMP_HISTORY_FILE.exists(),
+        "memory_count": len(MEMORY_HISTORY),
         "supabase_url_set": bool(os.environ.get("SUPABASE_URL", "")),
         "supabase_key_set": bool(os.environ.get("SUPABASE_ANON_KEY", "")),
         "supabase_client_created": sb is not None,
@@ -615,10 +670,10 @@ def get_history_list():
         except Exception:
             pass
 
-    return Response(
+    return no_store(Response(
         response=_safe_dumps(items),
         content_type="application/json; charset=utf-8",
-    )
+    ))
 
 
 @app.route("/api/reading/<file_id>")
@@ -627,10 +682,10 @@ def get_reading(file_id):
     if not path.exists():
         return json_resp({"error": "not_found"}, 404)
     data = json.loads(path.read_bytes())
-    return Response(
+    return no_store(Response(
         response=_safe_dumps(data),
         content_type="application/json; charset=utf-8",
-    )
+    ))
 
 
 @app.route("/api/download/<file_id>")
@@ -1143,7 +1198,7 @@ def get_history_entry(history_id):
     entry = next((h for h in history if h.get("id") == history_id), None)
     if not entry:
         return json_resp({"error": "not_found"}, 404)
-    return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+    return no_store(Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8"))
 
 
 @app.route("/api/history-entry/<path:history_ref>")
@@ -1165,7 +1220,7 @@ def get_history_entry_by_ref(history_ref):
         entry = next((h for h in load_local_history_data() if h.get("id") == history_id), None)
         if not entry:
             return json_resp({"error": "not_found"}, 404)
-        return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+        return no_store(Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8"))
 
     if source == "cloud":
         sb = get_supabase()
@@ -1173,12 +1228,12 @@ def get_history_entry_by_ref(history_ref):
             try:
                 res = sb.table("history").select("*").eq("id", history_id).limit(1).execute()
                 if res.data:
-                    return Response(response=_safe_dumps(res.data[0]), content_type="application/json; charset=utf-8")
+                    return no_store(Response(response=_safe_dumps(res.data[0]), content_type="application/json; charset=utf-8"))
             except Exception:
                 pass
         entry = next((h for h in load_history_data() if h.get("_history_ref") == history_ref), None)
         if entry:
-            return Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8")
+            return no_store(Response(response=_safe_dumps(entry), content_type="application/json; charset=utf-8"))
         return json_resp({"error": "not_found"}, 404)
 
     return json_resp({"error": "invalid_history_ref"}, 400)

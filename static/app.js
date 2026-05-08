@@ -757,7 +757,7 @@ function resetForm() {
 // ===== 履歴の読み込み =====
 async function loadHistory() {
   try {
-    const res = await fetch("/api/history-list");
+    const res = await fetch(`/api/history-list?t=${Date.now()}`, { cache: "no-store" });
     const items = await res.json();
     const listEl = document.getElementById("history-list");
 
@@ -785,11 +785,11 @@ async function loadReading(fileId, historyRef) {
   try {
     let data;
     if (historyRef) {
-      const res = await fetch(`/api/history-entry/${encodeURIComponent(historyRef)}`);
+      const res = await fetch(`/api/history-entry/${encodeURIComponent(historyRef)}?t=${Date.now()}`, { cache: "no-store" });
       data = await res.json();
       data.reading = data.result || "";
     } else {
-      const res = await fetch(`/api/reading/${fileId}`);
+      const res = await fetch(`/api/reading/${fileId}?t=${Date.now()}`, { cache: "no-store" });
       data = await res.json();
     }
 
