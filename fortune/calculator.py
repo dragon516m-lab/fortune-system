@@ -106,13 +106,11 @@ def format_for_prompt(
     if "animal" in fortune_data:
         ani = fortune_data["animal"]
         data_sections.append(f"""【動物占いデータ】
-・本命星（表の顔）：{ani['year_animal']['emoji']}{ani['year_animal']['animal']}（{ani['year_animal'].get('title', ani['year_animal']['special_quality'])} / {ani['year_animal'].get('color', '')} / {ani['year_animal'].get('number', '')}番）
-・本命星の資質：{ani['year_animal']['traits']}
-・干の特徴：{ani['year_animal']['stem_modifier']}
-・特別な才能：{ani['year_animal']['special_quality']}
-・月命星（内なる本質）：{ani['day_animal']['emoji']}{ani['day_animal']['animal']}（{ani['day_animal'].get('character', '')}）
-・内面の資質：{ani['day_animal']['traits']}
-・表裏の関係：{ani['inner_outer_compatibility']['description']}""")
+・基準値：{ani['base_value']}
+・動物番号：{ani['animal_number']}番
+・動物：{ani['year_animal']['emoji']}{ani['year_animal']['animal']}
+・資質：{ani['year_animal']['traits']}
+・判定方法：生年月の基準値 + 生まれた日。60を超える場合は60を引く。""")
 
     if "sukuyo" in fortune_data:
         sy = fortune_data["sukuyo"]
@@ -202,9 +200,9 @@ def format_for_prompt(
 動物占いが選択されている場合：
 ━━━━━━━━━━━━━━━━
 🐰 動物占い
-表の顔と内なる本質
+60分類が示す個性と行動パターン
 ━━━━━━━━━━━━━━━━
-表の顔、内なる本質、対人傾向、仕事や恋愛での現れ方を詳しく分析。
+動物番号、動物の資質、対人傾向、仕事や恋愛での現れ方を詳しく分析。
 
 宿曜占星術が選択されている場合：
 ━━━━━━━━━━━━━━━━
